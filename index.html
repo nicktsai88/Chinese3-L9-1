@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一棵開花的樹 - 互動學習 App</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+        }
+    }
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f5f5f4; /* stone-100 */
+        }
+        
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        
+        .animate-bounce-subtle {
+            animation: bounceSubtle 2s infinite;
+        }
+
+        .animate-confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes bounceSubtle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        /* Hide scrollbar for clean UI */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d6d3d1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a29e;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            BookOpen, PenTool, History, Heart, AlertCircle, CheckCircle, XCircle, 
+            ChevronRight, LogOut, User, ArrowLeft, Zap, Volume2, Home, LayoutGrid, 
+            Layers, ChevronDown, ChevronUp, Loader2, Sparkles, Image as ImageIcon, Download, ImageOff,
+            Gavel, Scale, FileText, List, Leaf, Droplets, Tent, Mountain, PlayCircle, FastForward, RotateCcw,
+            Flower, BookMarked
+        } from 'lucide-react';
+
+        // --- API Key Configuration ---
+        const apiKey = ""; 
+
+        // --- Helper: Convert PNG Data URL to JPG Data URL ---
+        const convertPngToJpg = (pngDataUrl) => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                    resolve(jpgDataUrl);
+                };
+                img.onerror = reject;
+                img.src = pngDataUrl;
+            });
+        };
+
+        // --- API Helper for Image Generation ---
+        const generateAIImage = async (prompt) => {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+            // 更新 Prompt 風格
+            const enhancedPrompt = prompt + ", masterpiece, best quality, oil painting style, emotional atmosphere, poetic, detailed background, soft lighting";
+
+            const payload = {
+                instances: [ { prompt: enhancedPrompt } ],
+                parameters: { sampleCount: 1, aspectRatio: "4:3" }
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API call failed: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                const base64Image = result.predictions?.[0]?.bytesBase64Encoded;
+                
+                if (base64Image) {
+                    const pngDataUrl = `data:image/png;base64,${base64Image}`;
+                    const jpgDataUrl = await convertPngToJpg(pngDataUrl);
+                    return jpgDataUrl;
+                } else {
+                    throw new Error("No image data in response");
+                }
+            } catch (error) {
+                console.error("Image generation error:", error);
+                alert("圖片生成失敗，請稍後再試。");
+                return null;
+            }
+        };
+
+        // --- LocalStorage Database Helper ---
+        // Modified keys to Chinese3-L8-1 per user request
+        const STORAGE_KEYS = {
+            USER: 'Chinese3-L8-1_user', 
+            HISTORY: 'Chinese3-L8-1_history',
+            MISTAKES: 'Chinese3-L8-1_mistakes',
+            FAVORITES: 'Chinese3-L8-1_favorites',
+            QUIZ_PROGRESS_FULL: 'Chinese3-L8-1_quiz_progress_full',
+            QUIZ_PROGRESS_QUICK: 'Chinese3-L8-1_quiz_progress_quick'
+        };
+
+        const LocalDB = {
+            getUser: () => {
+                const data = localStorage.getItem(STORAGE_KEYS.USER);
+                return data ? JSON.parse(data) : null;
+            },
+            saveUser: (name) => {
+                const user = { uid: 'local-user', displayName: name, lastLogin: new Date().toISOString() };
+                localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+                return user;
+            },
+            clearUser: () => {
+                localStorage.removeItem(STORAGE_KEYS.USER);
+            },
+            getHistory: () => {
+                const data = localStorage.getItem(STORAGE_KEYS.HISTORY);
+                return data ? JSON.parse(data) : [];
+            },
+            addHistory: (record) => {
+                const list = LocalDB.getHistory();
+                const newRecord = { ...record, id: Date.now().toString(), date: new Date().toISOString() };
+                list.unshift(newRecord); 
+                localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(list));
+                return newRecord;
+            },
+            getMistakes: () => {
+                const data = localStorage.getItem(STORAGE_KEYS.MISTAKES);
+                return data ? JSON.parse(data) : [];
+            },
+            addMistake: (mistake) => {
+                const list = LocalDB.getMistakes();
+                const exists = list.some(item => item.id === mistake.id);
+                if (!exists) {
+                    const newMistake = { ...mistake, timestamp: new Date().toISOString() };
+                    list.unshift(newMistake);
+                    localStorage.setItem(STORAGE_KEYS.MISTAKES, JSON.stringify(list));
+                }
+            },
+            removeMistake: (id) => {
+                const list = LocalDB.getMistakes().filter(item => item.id.toString() !== id.toString());
+                localStorage.setItem(STORAGE_KEYS.MISTAKES, JSON.stringify(list));
+            },
+            getFavorites: () => {
+                const data = localStorage.getItem(STORAGE_KEYS.FAVORITES);
+                return data ? new Set(JSON.parse(data)) : new Set();
+            },
+            toggleFavorite: (id) => {
+                const favs = LocalDB.getFavorites();
+                const idStr = id.toString();
+                if (favs.has(idStr)) {
+                    favs.delete(idStr);
+                } else {
+                    favs.add(idStr);
+                }
+                localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(Array.from(favs)));
+                return favs;
+            },
+            removeFavorite: (id) => {
+                const favs = LocalDB.getFavorites();
+                favs.delete(id.toString());
+                localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(Array.from(favs)));
+            },
+            // --- Quiz Progress Methods ---
+            saveProgress: (key, data) => {
+                localStorage.setItem(key, JSON.stringify(data));
+            },
+            getProgress: (key) => {
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : null;
+            },
+            clearProgress: (key) => {
+                localStorage.removeItem(key);
+            }
+        };
+        
+        // --- Global Data Definitions (一棵開花的樹 Content) ---
+        const STUDY_CONTENT = {
+            intro: {
+                title: "注釋補充",
+                items: [
+                    { term: "1. 基調", definition: "主要的中心思想或觀念。", prompt: "Abstract concept of a central theme or melody, soft colors" },
+                    { term: "2. 因緣", definition: "緣分、機緣。", prompt: "Red threads of destiny connecting people in a mist" },
+                    { term: "3. 殷切", definition: "熱切、急切。", prompt: "Eager face looking forward to something, emotional" },
+                    { term: "4. 家境殷實", definition: "家境充足、富裕。", prompt: "A wealthy and comfortable traditional Chinese courtyard" },
+                    { term: "5. 心儀", definition: "內心仰慕。", prompt: "A girl secretly admiring someone from afar, romantic atmosphere" },
+                    { term: "6. 遒勁", definition: "強勁有力。", prompt: "Powerful calligraphy strokes or strong ancient tree branches" },
+                    { term: "7. 飄逸", definition: "灑脫自然，超凡脫俗。", prompt: "Elegant fabric or figure flowing in the wind, ethereal" },
+                    { term: "8. 求「祂」讓我們結一段塵緣", definition: "泛指一般神明的第三人稱代名詞，此處指「佛」。", prompt: "A serene statue of Buddha in an ancient temple" },
+                    { term: "9. 盼望", definition: "近義渴望、企盼。", prompt: "Looking out of a window waiting for someone, longing" },
+                    { term: "10. 細聽", definition: "仔細地聽，有全神貫注之意。近義聆聽、諦聽、傾聽。", prompt: "Ear close to nature listening intently to the wind" },
+                    { term: "11. 落了一地", definition: "形容多到了極點。", prompt: "Flower petals covering the ground completely, carpet of petals" },
+                    { term: "12. 塵緣", definition: "佛教稱「色、聲、香、味、觸、法」為六塵，六塵與我接觸，為心之所緣，故名。", prompt: "Buddhist concept of worldly connections, spiritual visualization" },
+                    { term: "13. 無視", definition: "近義視而不見。", prompt: "Walking past something beautiful without looking, indifference" },
+                    { term: "14. 睹", definition: "看見。", prompt: "Eye seeing something clearly" },
+                    { term: "15. 凋零的心", definition: "凋零：(1) 本指植物的凋謝零落。後指人的死亡。(2) 比喻事物的衰敗。", prompt: "Withered heart or dying flower, melancholic" },
+                    { term: "16. 祝禱", definition: "祝告神靈以祈福保平安。", prompt: "Hands clasped in sincere prayer" },
+                    { term: "17. 惆悵", definition: "悲愁、失意。", prompt: "A person standing alone feeling melancholy at sunset" },
+                    { term: "18. 跌宕", definition: "形容詞句運用的變化起伏。", prompt: "Waves rising and falling, rhythmic flow visual representation" },
+                    { term: "19. 落花有意，流水無情", definition: "比喻一方有意，另一方卻無情。", prompt: "Flowers falling into a stream that flows away, poetic scene" },
+                    { term: "20. 萬紫千紅", definition: "形容群花盛開，多彩絢爛的景象。", prompt: "A garden full of colorful blooming flowers, vibrant" },
+                    { term: "21. 剛愎自用", definition: "性情倔強，固執己見。", prompt: "A stubborn person refusing advice, stern expression" },
+                    { term: "22. 痴心妄想", definition: "痴迷地幻想著不能實現的事情。", prompt: "Daydreaming about impossible things, dream bubble" }
+                ],
+                special_item: {
+                    term: "作者：席慕蓉",
+                    definition: "本名穆倫．席連勃，意即大江河。",
+                    long_desc: "「慕蓉」是「穆倫」的音譯。席慕蓉自云：\n(1) 畫畫是我終身投入的一種工作。\n(2) 寫作是我放鬆的一面，是我抽身的一種方法。\n(3) 寫詩是我給我自己的獎品。\n(4) 散文是對生命的一種驚嘆！\n\n作品《七里香》於民國七十年由大地出版社出版，是席慕蓉的第一本詩集，文字平易近人，內容多敘青春情懷，道出男女之間情感的糾葛纏綿，頗能與現今社會人們的內心互相呼應，因此廣受大眾歡迎。",
+                    prompt: "Portrait of female poet Xi Murong, artistic style"
+                }
+            },
+            shape_sound: {
+                title: "形音義補充",
+                items: [
+                    { char: "一", content: "表裡如「一」：相同、一致。\n「一」石二鳥：單一個。\n「一」不小心：偶然。\n「一」身是膽：全、滿、整。" },
+                    { char: "慎/嗔", content: "「慎」重：慎 (ㄕㄣˋ)\n「嗔」怒：嗔 (ㄔㄣ)" },
+                    { char: "慕/幕", content: "愛「慕」：慕 (ㄇㄨˋ)\n序「幕」：幕 (ㄇㄨˋ)" },
+                    { char: "壇/顫", content: "祭「壇」：壇 (ㄊㄢˊ)\n「顫」抖：顫 (ㄓㄢˋ)" }
+                ],
+                confusing: [
+                    { text: "睹 / 堵 / 賭", sounds: "ㄉㄨˇ (皆同音)" },
+                    { text: "竇 / 荳", sounds: "ㄉㄡˋ (皆同音)" },
+                    { text: "蹈 / 道", sounds: "ㄉㄠˋ (皆同音)" },
+                    { text: "抒 / 舒 / 紓", sounds: "ㄕㄨ (皆同音)" },
+                    { text: "辨 / 辯 / 辮 / 瓣", sounds: "ㄅㄧㄢˋ / ㄅㄧㄢˋ / ㄅㄧㄢˋ / ㄅㄢˋ" }
+                ]
+            },
+            idioms: {
+                title: "成語典故與解析",
+                hope: [
+                    { name: "朝思暮想", mean: "白天晚上都在想念。形容思念極深。", prompt: "Thinking about someone day and night" },
+                    { name: "夢寐以求", mean: "睡夢中都在尋找、追求。形容願望強烈、迫切。語本《詩經．周南．關雎》：「窈窕淑女，寤寐求之，求之不得，寤寐思服。」", prompt: "Dreaming about something desired" },
+                    { name: "望穿秋水", mean: "形容盼望的深切。秋水，秋天的水明淨澄澈，比喻眼睛。", prompt: "Looking at horizon with longing eyes" },
+                    { name: "望眼欲穿", mean: "形容企盼的深切。", prompt: "Staring intensely waiting for someone" },
+                    { name: "引領企踵", mean: "伸長脖子，提起腳跟。形容殷切期盼。", prompt: "Tiptoeing and looking forward eagerly" }
+                ],
+                tree: [
+                    { name: "別樹一幟", mean: "稱人的思想、學問有創見，自成一家。", prompt: "A unique flag on a solitary tree" },
+                    { name: "蚍蜉撼樹", mean: "比喻不自量力。蚍蜉，大螞蟻。原句指以大螞蟻的力量想去搖動大樹。", prompt: "Ant trying to shake a giant tree" },
+                    { name: "百年樹人", mean: "形容培育人才的不容易。樹，動詞，種植、栽培。", prompt: "Old teacher teaching students under a tree" },
+                    { name: "樹大招風", mean: "比喻個人名聲太大，容易招來妒嫉毀謗。", prompt: "Big tree swaying in strong wind" },
+                    { name: "火樹銀花", mean: "形容燈火通明，燈光燦爛的景象。", prompt: "Fireworks and lanterns lighting up the night" },
+                    { name: "鐵樹開花", mean: "比喻事物罕見或極難實現。", prompt: "Iron tree blooming flowers" }
+                ],
+                analysis: [
+                    { name: "詩中的「我」", mean: "詩中的「我」是指一名 (少女)，她期盼在最美麗的時刻與 (心儀) 的對象相遇。不僅表達對愛情的 (憧憬)，也希望在對方面前展現出自己 (最美麗) 的一面。", prompt: "A girl full of expectations and dreams" },
+                    { name: "虔敬的心情", mean: "以 (虔敬) 的心情，表現出對愛情的 (深切期盼)，希望能與心儀的人相遇，且有美好的結局。", prompt: "A girl praying sincerely" },
+                    { name: "第一節：少女心境", mean: "以誇飾的手法，凸顯少女的痴情。 ★少女心境：(虔誠祈願)。以 (戲劇) 的情節寫出少女的 (深情)、(痴想) 感動了佛，而助其達成相遇的願望。少女漫長的期盼終於有了 (轉機)。", prompt: "Girl praying to Buddha" },
+                    { name: "第一節：細節分析", mean: "(1)「開滿了花」呼應首節「在我最 (美麗) 的時刻」。亮麗的陽光下，開滿了花，表達竭盡心思來 (吸引) 對方的目光。\n(2)「慎重地」三字強調出自己不是隨意綻放，而只為「你」而開，所以可見其對感情的態度是 (莊嚴)、(專注)、且 (真誠) 的。\n(3)「前世的盼望」一詞，指明感情由來已 (久) 而且 (深摯)，呼應了首節「(求了五百年)」。", prompt: "Tree blooming carefully in sunlight" },
+                    { name: "第二節：少女心境", mean: "以戲劇化的情節，寫出少女的痴情與想望 —— 佛將她化成一棵樹，助其實現宿願 —— 讓兩人有相遇的機會。 ★少女心境：(熱切等待)。", prompt: "A tree standing by the road waiting" },
+                    { name: "第二節：細節分析", mean: "(1) 面對一棵花樹，不用視覺呈現，而富有變化地以「(聽)」字入筆，可與「情」字音韻和諧，並進一步表示渴望對方能傾聽「葉聲」，即自己「愛的 (心聲)」。\n(2) 因熱切盼望，殷殷守候，又不知心儀的人會如何 (回應)，所以忍不住顫抖，寫出「既 (期待) 又 (怕受傷害)」的 (緊張) 心情。", prompt: "Trembling leaves in the wind" },
+                    { name: "第三節：少女心境", mean: "本節是全詩的高潮，少女熱烈期盼，卻換得男子無視地走過，以反差手法凸顯少女的落寞與感傷。 ★少女心境：(失落感傷)。", prompt: "Man walking past indifferent" },
+                    { name: "第三節：細節分析", mean: "(1) (冷漠) 的態度讓少女由期盼轉為 (失落)，「無視」花樹之 (美)，就更遑論聽見心聲了。（遑論：不必說、不用再說。）\n(2) 此句是情節轉折的關鍵句。\n(3)「花瓣」已不再是完整的花朵，而是凋謝零落、破碎、紛飛的片狀物，故用以形容希望 (幻滅) 的失落感，可說是心碎的 (落寞)、(感傷) 之情，也就是期盼落空、(傷心失望) 的感覺。", prompt: "Fallen petals on the ground" }
+                ]
+            },
+            knowledge: {
+                title: "背景與寫作手法",
+                concepts: [
+                    { title: "席慕蓉自述", source: "作者與作品補充", content: "(1) 畫畫是我終身投入的一種工作。\n(2) 寫作是我放鬆的一面，是我抽身的一種方法。\n(3) 寫詩是我給我自己的獎品。\n(4) 散文是對生命的一種驚嘆！", prompt: "Artist painting and writing poetry" },
+                    { title: "《七里香》", source: "作品介紹", content: "於民國七十年由大地出版社出版，是席慕蓉的第一本詩集，文字平易近人，內容多敘青春情懷，道出男女之間情感的糾葛纏綿，頗能與現今社會人們的內心互相呼應，因此廣受大眾歡迎。\n\n席慕蓉曾說，寫《七里香》的那段時間，是她一生中最安靜的時刻，那是讀書、戀愛、結婚、生子及只有一點點鄉愁的年歲，感覺靈敏而純粹，最是生命清靈的時刻。", prompt: "Book cover of Seven Mile Fragrance" }
+                ],
+                examples: [
+                    { title: "寫作背景", content: "這首席慕蓉早期的詩之創作靈感，其實真的是一棵開滿桐花的油桐樹。那年，作者還在新竹教書，一天搭著由新竹開往苗栗的山線火車，當時正是桐花開放的季節，回頭望向山坡，一棵開滿油桐花、圓圓滿滿白花的油桐樹：在藍天下、在山坡上，在作者來不及驚嘆的時候，車一轉彎……樹不見了！但那驚鴻一瞥，卻令作者久久不能自已！作者悵然之際卻也對造物者的偉大深深感動。", prompt: "White Tung flowers blooming on a hillside seen from a train" },
+                    { title: "詩的深層意涵", content: "也許你可以解釋是男女之間的愛情；也可以解釋成人、物之間的感情。萬物皆有情，生命與生命相遇的珍惜、分享，有時是無法用講解來傳達的。這不正是「詩歌」迷人之所在——餘韻猶存、不同的體會感動只在個人心中。\n\n席慕蓉說：「有時候『一棵開花的樹』也是開給自己看的……。」「生命在青春時常常是錯過的，需要經過許多年你才會發現你套在對方身上的模式是錯的。但愛可以喚醒內在的美，美就是萬物有情、萬物有靈。」感情不該只是局限於男與女、人與人之間，生命與生命的交集更值得我們去珍惜！", prompt: "Spiritual connection between nature and human" }
+                ],
+                techniques: [
+                    { title: "1. 音韻諧暢", content: "本詩音韻諧暢，詩中第一節的「前、年、緣」，第二節的「旁、望」，第三節的「近、心」、「聽、情」均有押韻的效果。", prompt: "Musical notes floating in air" },
+                    { title: "2. 第一人稱", content: "用「我」的口吻敘述少女的單戀，屬於第 (一) 人稱。", prompt: "A girl writing a diary" },
+                    { title: "3. 抒情詩", content: "是一首 (抒情) 詩，描述了女子對感情的 (期盼) 和 (失落)。", prompt: "Emotional expression in poetry" },
+                    { title: "4. 象徵手法", content: "以「一棵開花的樹」(象徵) 期盼情緣的少女，用 (慎重) 而 (莊嚴) 的態度追求愛情。", prompt: "A flowering tree symbolizing a girl" },
+                    { title: "5. 結局安排", content: "為什麼作者並未安排期盼成真的喜悅結局？因為「執著的落空」更具 (震撼力)，會令人更加 (動容)，且印象更深刻。", prompt: "Sad but beautiful ending scene" }
+                ]
+            },
+            structure: {
+                title: "課文結構表",
+                parts: [
+                    { section: "第一節", title: "佛前祈求", content: "少女期盼在她最美麗的時候，能與心儀的對象相遇。", prompt: "Girl kneeling and praying sincerely" },
+                    { section: "第二節", title: "今生期盼", content: "佛助少女化成一棵花樹，與心儀對象有相遇的機會。", prompt: "Tree with green leaves trembling in anticipation" },
+                    { section: "第三節", title: "期盼落空", content: "少女熱烈的期盼落空，留下無限的落寞與感傷。", prompt: "Man walking past a tree without looking, petals falling" }
+                ]
+            }
+        };
+
+        const generateQuestions = () => {
+            const q = [];
+            let id = 1;
+            
+            // --- 1. 注釋 (22題 - Full Coverage) ---
+            q.push({ id: id++, category: "注釋", question: "「基調」的意思是？", options: ["主要的中心思想或觀念", "音樂的旋律", "說話的語氣", "建築的地基"], answer: "主要的中心思想或觀念" });
+            q.push({ id: id++, category: "注釋", question: "「家境殷實」是指？", options: ["家境充足、富裕", "家裡人很多", "房子很堅固", "家境貧困"], answer: "家境充足、富裕" });
+            q.push({ id: id++, category: "注釋", question: "「遒勁」通常形容什麼？", options: ["筆力或樹枝強勁有力", "風很大", "跑步很快", "說話很大聲"], answer: "筆力或樹枝強勁有力" });
+            q.push({ id: id++, category: "注釋", question: "「飄逸」的意思是？", options: ["灑脫自然，超凡脫俗", "飄浮在空中", "衣服很寬大", "頭髮很長"], answer: "灑脫自然，超凡脫俗" });
+            q.push({ id: id++, category: "注釋", question: "詩中「求祂」的「祂」是指？", options: ["佛", "上帝", "月老", "土地公"], answer: "佛" });
+            q.push({ id: id++, category: "注釋", question: "「塵緣」在佛教中指什麼？", options: ["六塵與心接觸的緣分", "灰塵", "前世的記憶", "男女感情"], answer: "六塵與心接觸的緣分" });
+            q.push({ id: id++, category: "注釋", question: "「無視」的意思接近於？", options: ["視而不見", "看不清楚", "沒有視力", "非常重視"], answer: "視而不見" });
+            q.push({ id: id++, category: "注釋", question: "「凋零」除了指植物凋謝，還可比喻？", options: ["事物的衰敗", "天氣變冷", "心情很好", "重新開始"], answer: "事物的衰敗" });
+            q.push({ id: id++, category: "注釋", question: "「祝禱」的意思是？", options: ["祝告神靈以祈福保平安", "慶祝生日", "寫信給朋友", "大聲唱歌"], answer: "祝告神靈以祈福保平安" });
+            q.push({ id: id++, category: "注釋", question: "「惆悵」是指什麼樣的心情？", options: ["悲愁、失意", "憤怒", "興奮", "平靜"], answer: "悲愁、失意" });
+            q.push({ id: id++, category: "注釋", question: "「跌宕」形容什麼？", options: ["詞句運用的變化起伏", "走路跌倒", "山路崎嶇", "心情盪漾"], answer: "詞句運用的變化起伏" });
+            q.push({ id: id++, category: "注釋", question: "「落花有意，流水無情」比喻？", options: ["一方有意，另一方卻無情", "風景優美", "時間流逝", "花瓣掉進水裡"], answer: "一方有意，另一方卻無情" });
+            q.push({ id: id++, category: "注釋", question: "「剛愎自用」的意思是？", options: ["性情倔強，固執己見", "非常有自信", "剛強勇敢", "善於利用資源"], answer: "性情倔強，固執己見" });
+            q.push({ id: id++, category: "注釋", question: "「細聽」的意思接近？", options: ["聆聽、諦聽", "隨便聽聽", "聽不清楚", "偷聽"], answer: "聆聽、諦聽" });
+            q.push({ id: id++, category: "注釋", question: "「心儀」的意思是？", options: ["內心仰慕", "心裡懷疑", "心臟儀器", "心情愉快"], answer: "內心仰慕" });
+            // Added Missing Annotations
+            q.push({ id: id++, category: "注釋", question: "「因緣」的意思是？", options: ["緣分、機緣", "因為所以", "婚姻關係", "朋友關係"], answer: "緣分、機緣" });
+            q.push({ id: id++, category: "注釋", question: "「殷切」的意思是？", options: ["熱切、急切", "非常親切", "刀法俐落", "聲音清脆"], answer: "熱切、急切" });
+            q.push({ id: id++, category: "注釋", question: "「盼望」的近義詞是？", options: ["渴望、企盼", "失望、絕望", "觀望、眺望", "回望、張望"], answer: "渴望、企盼" });
+            q.push({ id: id++, category: "注釋", question: "「落了一地」在詩中形容？", options: ["多到了極點", "只有一片", "剛開始掉落", "還沒掉下來"], answer: "多到了極點" });
+            q.push({ id: id++, category: "注釋", question: "「睹」的意思是？", options: ["看見", "賭博", "堵塞", "肚子"], answer: "看見" });
+            q.push({ id: id++, category: "注釋", question: "「萬紫千紅」形容什麼景象？", options: ["群花盛開，多彩絢爛", "衣服顏色很多", "天上的彩虹", "燈光閃爍"], answer: "群花盛開，多彩絢爛" });
+            q.push({ id: id++, category: "注釋", question: "「痴心妄想」的意思是？", options: ["痴迷地幻想著不能實現的事情", "很有想像力", "心地善良", "做事很專心"], answer: "痴迷地幻想著不能實現的事情" });
+
+            // --- 2. 形音義 (20題 - Enhanced Coverage) ---
+            q.push({ id: id++, category: "形音義", question: "「一」石二鳥的「一」字義是？", options: ["單一個", "相同", "全、滿", "偶然"], answer: "單一個" });
+            q.push({ id: id++, category: "形音義", question: "表裡如「一」的「一」字義是？", options: ["相同、一致", "單一個", "全、滿", "偶然"], answer: "相同、一致" });
+            q.push({ id: id++, category: "形音義", question: "「一」不小心的「一」字義是？", options: ["偶然", "相同", "單一個", "全、滿"], answer: "偶然" });
+            q.push({ id: id++, category: "形音義", question: "「一」身是膽的「一」字義是？", options: ["全、滿、整", "單一個", "相同", "偶然"], answer: "全、滿、整" });
+            
+            q.push({ id: id++, category: "形音義", question: "「睹」物思人的讀音是？", options: ["ㄉㄨˇ", "ㄓㄨˇ", "ㄉㄡˋ", "ㄕㄨ"], answer: "ㄉㄨˇ" });
+            q.push({ id: id++, category: "形音義", question: "情「竇」初開的讀音是？", options: ["ㄉㄡˋ", "ㄉㄨˇ", "ㄕㄨ", "ㄇㄨˋ"], answer: "ㄉㄡˋ" });
+            q.push({ id: id++, category: "形音義", question: "循規「蹈」矩的讀音是？", options: ["ㄉㄠˋ", "ㄊㄠāo", "ㄉㄠˇ", "ㄓㄠˋ"], answer: "ㄉㄠˋ" });
+            q.push({ id: id++, category: "形音義", question: "各「抒」己見的讀音是？", options: ["ㄕㄨ", "ㄩˇ", "ㄧㄝˇ", "ㄇㄠˋ"], answer: "ㄕㄨ" });
+            q.push({ id: id++, category: "形音義", question: "愛「慕」的讀音是？", options: ["ㄇㄨˋ", "ㄇㄛˋ", "ㄇㄨ", "ㄇㄤˊ"], answer: "ㄇㄨˋ" });
+            q.push({ id: id++, category: "形音義", question: "序「幕」的讀音是？", options: ["ㄇㄨˋ", "ㄇㄛˋ", "ㄇㄨ", "ㄇㄤˊ"], answer: "ㄇㄨˋ" });
+            q.push({ id: id++, category: "形音義", question: "「慎」重的讀音是？", options: ["ㄕㄣˋ", "ㄔㄣ", "ㄓㄣ", "ㄙㄣˋ"], answer: "ㄕㄣˋ" });
+            q.push({ id: id++, category: "形音義", question: "「嗔」怒的讀音是？", options: ["ㄔㄣ", "ㄕㄣˋ", "ㄓㄣ", "ㄊㄧㄢ"], answer: "ㄔㄣ" });
+            q.push({ id: id++, category: "形音義", question: "祭「壇」的讀音是？", options: ["ㄊㄢˊ", "ㄓㄢˋ", "ㄕㄢˋ", "ㄧㄣˊ"], answer: "ㄊㄢˊ" });
+            q.push({ id: id++, category: "形音義", question: "「顫」抖的讀音是？", options: ["ㄓㄢˋ", "ㄊㄢˊ", "ㄓㄢ", "ㄕㄢˋ"], answer: "ㄓㄢˋ" });
+            q.push({ id: id++, category: "形音義", question: "下列哪一個讀音不是「ㄅㄧㄢˋ」？", options: ["花瓣", "辨別", "辯論", "辮子"], answer: "花瓣" });
+            q.push({ id: id++, category: "形音義", question: "花「瓣」的讀音是？", options: ["ㄅㄢˋ", "ㄅㄧㄢˋ", "ㄆㄢˋ", "ㄅㄟˋ"], answer: "ㄅㄢˋ" });
+            
+            // Added Specific Confusing Words Checks
+            q.push({ id: id++, category: "形音義", question: "觀者如「堵」的意思是？", options: ["牆壁，形容人多", "賭博", "看見", "心裡不通"], answer: "牆壁，形容人多" });
+            q.push({ id: id++, category: "形音義", question: "「荳」蔻年華通常指幾歲的少女？", options: ["十三、四歲", "二十歲", "剛出生", "六十歲"], answer: "十三、四歲" });
+            q.push({ id: id++, category: "形音義", question: "身心「舒」暢的舒意思為？", options: ["伸展、放鬆", "發表意見", "解除困難", "書寫"], answer: "伸展、放鬆" });
+            q.push({ id: id++, category: "形音義", question: "「紓」壓解悶的紓意思為？", options: ["解除、緩和", "伸展", "發表", "舒服"], answer: "解除、緩和" });
+
+            // --- 3. 成語典故 (15題) ---
+            q.push({ id: id++, category: "成語", question: "「朝思暮想」形容什麼？", options: ["思念極深", "時間過很快", "早晚都要工作", "想睡覺"], answer: "思念極深" });
+            q.push({ id: id++, category: "成語", question: "「夢寐以求」的意思是？", options: ["形容願望強烈、迫切", "作夢都在玩", "睡覺品質很好", "不想起床"], answer: "形容願望強烈、迫切" });
+            q.push({ id: id++, category: "成語", question: "「望穿秋水」比喻？", options: ["形容盼望的深切", "眼睛很漂亮", "水很清澈", "視力很好"], answer: "形容盼望的深切" });
+            q.push({ id: id++, category: "成語", question: "「引領企踵」形容？", options: ["殷切期盼", "脖子很長", "腳跟受傷", "跳舞的樣子"], answer: "殷切期盼" });
+            q.push({ id: id++, category: "成語", question: "「別樹一幟」的意思是？", options: ["思想學問有創見，自成一家", "種樹的方法", "旗子很特別", "離開家鄉"], answer: "思想學問有創見，自成一家" });
+            q.push({ id: id++, category: "成語", question: "「蚍蜉撼樹」比喻？", options: ["不自量力", "力氣很大", "螞蟻搬家", "樹很穩固"], answer: "不自量力" });
+            q.push({ id: id++, category: "成語", question: "「百年樹人」形容？", options: ["培育人才的不容易", "樹可以活很久", "人可以活百歲", "種樹要一百年"], answer: "培育人才的不容易" });
+            q.push({ id: id++, category: "成語", question: "「樹大招風」比喻？", options: ["個人名聲太大，容易招來妒嫉", "樹太大了要修剪", "風很涼爽", "招財進寶"], answer: "個人名聲太大，容易招來妒嫉" });
+            q.push({ id: id++, category: "成語", question: "「火樹銀花」形容？", options: ["燈火通明，燦爛的景象", "樹林失火", "銀色的花朵", "金屬工藝"], answer: "燈火通明，燦爛的景象" });
+            q.push({ id: id++, category: "成語", question: "「鐵樹開花」比喻？", options: ["事物罕見或極難實現", "植物突變", "鐵做的裝飾品", "很容易發生"], answer: "事物罕見或極難實現" });
+            q.push({ id: id++, category: "成語", question: "下列何者「不是」形容盼望深切？", options: ["剛愎自用", "望眼欲穿", "望穿秋水", "引領企踵"], answer: "剛愎自用" });
+            q.push({ id: id++, category: "成語", question: "「望穿秋水」的「秋水」比喻什麼？", options: ["眼睛", "眼淚", "湖水", "鏡子"], answer: "眼睛" });
+            q.push({ id: id++, category: "成語", question: "《詩經》中「寤寐求之」與哪句成語意思相近？", options: ["夢寐以求", "高枕無憂", "一夢黃粱", "醉生夢死"], answer: "夢寐以求" });
+            q.push({ id: id++, category: "成語", question: "「蚍蜉」是指什麼？", options: ["大螞蟻", "毛毛蟲", "甲蟲", "蝴蝶"], answer: "大螞蟻" });
+            q.push({ id: id++, category: "成語", question: "「樹」大招風的「樹」在成語中多指？", options: ["樹木", "建立", "種植", "屏風"], answer: "樹木" }); 
+
+            // --- 4. 課文解析 (15題) ---
+            q.push({ id: id++, category: "課文解析", question: "詩中的「我」是指？", options: ["一名少女", "一棵樹", "席慕蓉", "佛"], answer: "一名少女" });
+            q.push({ id: id++, category: "課文解析", question: "少女在佛前求了多久？", options: ["五百年", "一千年", "一輩子", "三天"], answer: "五百年" });
+            q.push({ id: id++, category: "課文解析", question: "少女祈求的內容是？", options: ["結一段塵緣", "長生不老", "變成大樹", "身體健康"], answer: "結一段塵緣" });
+            q.push({ id: id++, category: "課文解析", question: "詩中第一節展現了少女怎樣的心境？", options: ["虔誠祈願", "悲傷絕望", "憤怒不平", "猶豫不決"], answer: "虔誠祈願" });
+            q.push({ id: id++, category: "課文解析", question: "「陽光下慎重地開滿了花」象徵什麼？", options: ["展現最美麗的一面", "天氣很好", "花朵很多", "陽光普照"], answer: "展現最美麗的一面" });
+            q.push({ id: id++, category: "課文解析", question: "「朵朵都是我前世的盼望」表達了感情的？", options: ["深摯與久遠", "短暫與隨意", "虛假與無奈", "快樂與輕鬆"], answer: "深摯與久遠" });
+            q.push({ id: id++, category: "課文解析", question: "第二節中，少女化身為樹後的心境是？", options: ["熱切等待", "後悔莫及", "平靜無波", "想逃跑"], answer: "熱切等待" });
+            q.push({ id: id++, category: "課文解析", question: "「顫抖的葉」表現出少女怎樣的心情？", options: ["既期待又怕受傷害", "因為風很冷", "害怕被砍伐", "興奮到跳舞"], answer: "既期待又怕受傷害" });
+            q.push({ id: id++, category: "課文解析", question: "詩中用哪種感官描寫來傳達「心聲」？", options: ["聽覺 (葉聲)", "視覺 (花色)", "嗅覺 (花香)", "觸覺 (樹皮)"], answer: "聽覺 (葉聲)" });
+            q.push({ id: id++, category: "課文解析", question: "男子的態度是？", options: ["無視地走過", "停下來欣賞", "折下一朵花", "坐在樹下"], answer: "無視地走過" });
+            q.push({ id: id++, category: "課文解析", question: "「花瓣」落了一地象徵什麼？", options: ["希望幻滅的失落", "秋天到了", "種子傳播", "美麗的風景"], answer: "希望幻滅的失落" });
+            q.push({ id: id++, category: "課文解析", question: "第三節的主要心境是？", options: ["落寞感傷", "充滿希望", "憤怒報復", "釋懷放下"], answer: "落寞感傷" });
+            q.push({ id: id++, category: "課文解析", question: "本詩使用第幾人稱敘述？", options: ["第一人稱", "第二人稱", "第三人稱", "全知觀點"], answer: "第一人稱" });
+            q.push({ id: id++, category: "課文解析", question: "這首詩屬於什麼類型的詩？", options: ["抒情詩", "敘事詩", "諷刺詩", "田園詩"], answer: "抒情詩" });
+            q.push({ id: id++, category: "課文解析", question: "為什麼作者不安排喜悅的結局？", options: ["遺憾與落空更具震撼力", "作者喜歡悲劇", "現實生活都很慘", "為了寫續集"], answer: "遺憾與落空更具震撼力" });
+
+            // --- 5. 背景與寫作手法 (25題 - Expanded) ---
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉本名「穆倫．席連勃」意思是？", options: ["大江河", "美麗的花", "高山", "草原"], answer: "大江河" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉的第一本詩集是？", options: ["七里香", "無怨的青春", "時光九篇", "迷途詩冊"], answer: "七里香" });
+            q.push({ id: id++, category: "背景知識", question: "《七里香》於民國幾年出版？", options: ["七十年", "六十年", "八十年", "五十年"], answer: "七十年" });
+            q.push({ id: id++, category: "背景知識", question: "《七里香》由哪家出版社出版？", options: ["大地出版社", "九歌出版社", "爾雅出版社", "皇冠出版社"], answer: "大地出版社" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「寫詩」對她的意義是？", options: ["給自己的獎品", "終身的工作", "放鬆的方法", "對生命的驚嘆"], answer: "給自己的獎品" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「畫畫」對她的意義是？", options: ["終身投入的工作", "給自己的獎品", "放鬆的方法", "對生命的驚嘆"], answer: "終身投入的工作" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「散文」對她的意義是？", options: ["對生命的一種驚嘆", "給自己的獎品", "終身投入的工作", "放鬆的方法"], answer: "對生命的一種驚嘆" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「寫作」對她的意義是？", options: ["放鬆的一面，抽身的方法", "終身投入的工作", "給自己的獎品", "對生命的驚嘆"], answer: "放鬆的一面，抽身的方法" }); // Added
+            q.push({ id: id++, category: "背景知識", question: "《一棵開花的樹》創作靈感來自？", options: ["一棵開滿花的油桐樹", "櫻花樹", "夢境", "一個老獵人的故事"], answer: "一棵開滿花的油桐樹" });
+            q.push({ id: id++, category: "背景知識", question: "作者在哪裡看到這棵觸動靈感的樹？", options: ["新竹往苗栗的火車上", "阿里山", "陽明山", "家裡的後院"], answer: "新竹往苗栗的火車上" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉認為「愛」可以喚醒什麼？", options: ["內在的美", "沉睡的人", "前世記憶", "痛苦的回憶"], answer: "內在的美" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉說這首詩有時候也是開給誰看的？", options: ["自己", "讀者", "愛人", "佛"], answer: "自己" });
+            q.push({ id: id++, category: "背景知識", question: "《七里香》這本詩集主要描述什麼情懷？", options: ["青春情懷", "愛國情操", "山水風景", "哲理思考"], answer: "青春情懷" });
+            // Added Techniques Questions
+            q.push({ id: id++, category: "背景知識", question: "詩中第一節「前、年、緣」和第三節「近、心」運用了什麼寫作手法？", options: ["押韻 (音韻諧暢)", "映襯", "譬喻", "排比"], answer: "押韻 (音韻諧暢)" });
+            q.push({ id: id++, category: "背景知識", question: "本詩以「一棵開花的樹」象徵？", options: ["期盼情緣的少女", "大自然的生命力", "佛的化身", "美麗的風景"], answer: "期盼情緣的少女" });
+            q.push({ id: id++, category: "背景知識", question: "少女對感情的態度被形容為？", options: ["慎重而莊嚴", "隨便且輕浮", "激烈且瘋狂", "冷漠且無情"], answer: "慎重而莊嚴" });
+            q.push({ id: id++, category: "背景知識", question: "詩中「慎重地」三字強調少女不是隨意綻放，而是？", options: ["只為「你」而開", "為了吸引蜜蜂", "因為春天到了", "為了比賽"], answer: "只為「你」而開" });
+            q.push({ id: id++, category: "背景知識", question: "關於這首詩的寫作背景，作者看到的樹是什麼顏色的花？", options: ["白花 (油桐花)", "紅花 (木棉花)", "粉紅花 (櫻花)", "黃花 (阿勃勒)"], answer: "白花 (油桐花)" });
+            q.push({ id: id++, category: "背景知識", question: "詩中以「顫抖的葉」來表達什麼心情？", options: ["既期待又怕受傷害", "因為很冷", "因為害怕", "因為興奮"], answer: "既期待又怕受傷害" });
+            q.push({ id: id++, category: "背景知識", question: "男子「無視」的走過，是全詩的關鍵轉折，這造成了什麼效果？", options: ["反差", "排比", "對偶", "層遞"], answer: "反差" });
+
+            // 隨機打亂選項 (Fisher-Yates Shuffle)
+            const shuffleArray = (array) => {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            };
+
+            // 對每一題的選項進行洗牌
+            q.forEach(item => {
+                item.options = shuffleArray(item.options);
+            });
+
+            return q;
+        };
+
+        const ALL_QUESTIONS = generateQuestions(); 
+
+        const playSound = (type) => {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                const now = ctx.currentTime;
+                if (type === 'correct') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, now);
+                    osc.frequency.setValueAtTime(659.25, now + 0.1);
+                    osc.frequency.setValueAtTime(783.99, now + 0.2);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                } else {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.linearRampToValueAtTime(100, now + 0.3);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                }
+            } catch (e) { console.error(e); }
+        };
+
+        const Confetti = () => {
+            const colors = ['#F97316', '#EF4444', '#F59E0B', '#EC4899', '#FB923C', '#FCD34D'];
+            const pieces = Array.from({ length: 50 }).map((_, i) => ({
+                id: i, left: Math.random() * 100 + '%', animationDelay: Math.random() * 0.5 + 's', backgroundColor: colors[Math.floor(Math.random() * colors.length)], rotation: Math.random() * 360 + 'deg'
+            }));
+            return (
+                <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
+                    {pieces.map((p) => (
+                        <div key={p.id} className="absolute w-3 h-3 md:w-4 md:h-4 opacity-0 animate-confetti" style={{ left: p.left, top: '-20px', backgroundColor: p.backgroundColor, transform: `rotate(${p.rotation})`, animation: `fall 2.5s ease-out forwards ${p.animationDelay}` }} />
+                    ))}
+                    <style>{`@keyframes fall { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }`}</style>
+                </div>
+            );
+        };
+
+        const LoadingScreen = () => (
+            <div className="flex flex-col items-center justify-center h-screen bg-stone-50">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mb-4"></div>
+                <p className="text-stone-600">載入中...</p>
+            </div>
+        );
+
+        // --- Auth & Dashboard Components ---
+        const AuthScreen = ({ onLogin }) => {
+            const [name, setName] = useState('');
+            const [savedName, setSavedName] = useState('');
+
+            useEffect(() => {
+                const user = LocalDB.getUser();
+                if (user && user.displayName) {
+                    setSavedName(user.displayName);
+                }
+            }, []);
+
+            const handleLogin = (e, forcedName) => {
+                if (e) e.preventDefault();
+                const loginName = forcedName || name;
+                if (!loginName.trim()) return;
+                
+                const user = LocalDB.saveUser(loginName);
+                onLogin(user);
+            };
+
+            const handleQuickLogin = () => {
+                const randomNum = Math.floor(Math.random() * 1000);
+                const user = LocalDB.saveUser(`訪客 ${randomNum}`);
+                onLogin(user);
+            };
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-cyan-100 to-blue-100 flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-4 border-cyan-500">
+                        <div className="text-center mb-8">
+                            <Droplets className="w-16 h-16 text-cyan-600 mx-auto mb-4" />
+                            <h1 className="text-3xl font-bold text-stone-800">一棵開花的樹</h1>
+                            <p className="text-stone-500 mt-2">互動式學習 App</p>
+                        </div>
+                        
+                        {savedName && (
+                            <div className="mb-6">
+                                <button onClick={() => handleLogin(null, savedName)} className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 text-white py-4 rounded-xl font-bold hover:from-cyan-600 hover:to-blue-600 transition shadow-lg shadow-cyan-200 flex items-center justify-center group">
+                                    <Sparkles className="w-5 h-5 mr-2 animate-pulse text-yellow-200" />
+                                    <span>以 {savedName} 繼續學習</span>
+                                    <ChevronRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition" />
+                                </button>
+                                <div className="text-center mt-3">
+                                    <button onClick={() => { setSavedName(''); LocalDB.clearUser(); }} className="text-xs text-stone-400 hover:text-stone-600 underline">這不是我，切換帳號</button>
+                                </div>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleLogin} className={`space-y-4 ${savedName ? 'hidden' : ''}`}>
+                            <div>
+                                <label className="block text-sm font-medium text-stone-700 mb-1">請輸入您的姓名</label>
+                                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:outline-none" placeholder="Ex: 王小明" />
+                            </div>
+                            <button type="submit" disabled={!name.trim()} className="w-full bg-cyan-600 text-white py-3 rounded-lg font-semibold hover:bg-cyan-700 transition disabled:opacity-50">
+                                開始學習
+                            </button>
+                        </form>
+                        
+                        <div className={`mt-4 flex items-center justify-between ${savedName ? 'hidden' : ''}`}>
+                            <div className="h-px bg-stone-200 flex-1"></div><span className="text-sm text-stone-400 px-2">或</span><div className="h-px bg-stone-200 flex-1"></div>
+                        </div>
+                        <button onClick={handleQuickLogin} className={`mt-4 w-full bg-stone-50 border-2 border-stone-200 text-stone-600 py-3 rounded-lg font-semibold hover:bg-stone-100 transition flex items-center justify-center ${savedName ? 'hidden' : ''}`}>
+                            <Zap className="w-5 h-5 mr-2 text-yellow-500" /> 快速體驗 (免輸入姓名)
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = ({ user, onLogout, onNavigate }) => {
+            return (
+                <div className="p-6 max-w-4xl mx-auto space-y-6">
+                    <header className="flex justify-between items-center mb-8">
+                        <div>
+                            <h1 className="text-2xl font-bold text-stone-800">歡迎回來，{user.displayName || "同學"}</h1>
+                            <p className="text-stone-500">準備好探索文學的奧祕了嗎？</p>
+                        </div>
+                        <button onClick={onLogout} className="text-stone-500 hover:text-red-500 flex items-center">
+                            <LogOut className="w-6 h-6 mr-1" /> <span className="text-sm">登出</span>
+                        </button>
+                    </header>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <button onClick={() => onNavigate('learn')} className="bg-white p-6 rounded-2xl shadow-md hover:shadow-lg transition group border-l-4 border-cyan-500 text-left col-span-1 md:col-span-2">
+                            <div className="flex items-center space-x-4 mb-2">
+                                <div className="bg-cyan-100 p-3 rounded-full group-hover:bg-cyan-200 transition"><BookOpen className="w-8 h-8 text-cyan-600" /></div>
+                                <h2 className="text-xl font-bold text-stone-800">進入學習介面</h2>
+                            </div>
+                            <p className="text-stone-500 pl-16">瀏覽注釋、形音義、成語典故與知識拓展。</p>
+                        </button>
+                        
+                        {/* 測驗區塊 */}
+                        <div className="col-span-1 md:col-span-2 bg-stone-50 border-2 border-dashed border-stone-200 rounded-2xl p-4">
+                            <h3 className="text-lg font-bold text-stone-600 mb-3 flex items-center"><Scale className="w-5 h-5 mr-2" /> 測驗挑戰區</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <button onClick={() => onNavigate('quiz_setup')} className="bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition group border-l-4 border-emerald-500 text-left">
+                                    <div className="flex items-center space-x-3 mb-1">
+                                        <div className="bg-emerald-100 p-2 rounded-full group-hover:bg-emerald-200 transition"><PenTool className="w-6 h-6 text-emerald-600" /></div>
+                                        <h2 className="text-lg font-bold text-stone-800">一般測驗</h2>
+                                    </div>
+                                    <p className="text-sm text-stone-500 pl-12">逐題作答，適合詳細練習。</p>
+                                </button>
+                                
+                                <button onClick={() => onNavigate('quick_quiz')} className="bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition group border-l-4 border-amber-500 text-left">
+                                    <div className="flex items-center space-x-3 mb-1">
+                                        <div className="bg-amber-100 p-2 rounded-full group-hover:bg-amber-200 transition"><FastForward className="w-6 h-6 text-amber-600" /></div>
+                                        <h2 className="text-lg font-bold text-stone-800">快速測驗</h2>
+                                    </div>
+                                    <p className="text-sm text-stone-500 pl-12">列表模式，即時回饋刷題。</p>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4 mt-8">
+                        <button onClick={() => onNavigate('history')} className="bg-white p-4 rounded-xl shadow-sm flex flex-col items-center justify-center hover:bg-stone-50 transition">
+                            <History className="w-6 h-6 text-orange-500 mb-2" /><span className="text-sm font-medium text-stone-700">測驗紀錄</span>
+                        </button>
+                        <button onClick={() => onNavigate('mistakes')} className="bg-white p-4 rounded-xl shadow-sm flex flex-col items-center justify-center hover:bg-stone-50 transition">
+                            <AlertCircle className="w-6 h-6 text-red-500 mb-2" /><span className="text-sm font-medium text-stone-700">錯題本</span>
+                        </button>
+                        <button onClick={() => onNavigate('favorites')} className="bg-white p-4 rounded-xl shadow-sm flex flex-col items-center justify-center hover:bg-stone-50 transition">
+                            <Heart className="w-6 h-6 text-rose-500 mb-2" /><span className="text-sm font-medium text-stone-700">題目收藏</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- LearningModule ---
+        const LearningModule = ({ onBack }) => {
+            const [activeTab, setActiveTab] = useState('intro'); 
+            const [generatedImages, setGeneratedImages] = useState({});
+            const [loadingImages, setLoadingImages] = useState({});
+            
+            const tabs = [
+                { id: 'intro', label: '注釋與作者' },
+                { id: 'shape_sound', label: '形音義' },
+                { id: 'idioms', label: '成語與解析' },
+                { id: 'knowledge', label: '背景與手法' },
+                { id: 'structure', label: '課文結構' },
+            ];
+
+            // Render static image if provided in item, otherwise skip image section
+            const renderImageSection = (item) => {
+                if (item.image) {
+                    return (
+                        <div className="mt-4 border-t border-dashed border-stone-200 pt-4">
+                            <div className="relative group">
+                                <img 
+                                    src={item.image} 
+                                    alt={item.name || item.title || "Illustration"} 
+                                    className="w-full h-auto rounded-lg shadow-sm object-cover"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none'; // Hide if image load fails
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    );
+                }
+                return null;
+            };
+
+            return (
+                <div className="h-full flex flex-col">
+                    <div className="bg-white shadow-sm border-b px-4 py-3 flex items-center justify-between sticky top-0 z-10">
+                        <div className="flex items-center">
+                            <button onClick={onBack} className="flex items-center text-stone-600 hover:text-cyan-600">
+                                <ArrowLeft className="w-5 h-5 mr-1" /> 返回
+                            </button>
+                            <div className="w-4"></div>
+                            <h2 className="font-bold text-lg text-stone-800 hidden md:block">學習重點</h2>
+                        </div>
+                    </div>
+                    
+                    <div className="flex overflow-x-auto bg-stone-50 px-2 py-2 gap-2 sticky top-14 z-10 border-b">
+                        {tabs.map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
+                                    activeTab === tab.id 
+                                        ? 'bg-cyan-600 text-white shadow-md' 
+                                        : 'bg-white text-stone-600 hover:bg-cyan-50 border border-stone-200'
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-stone-100 pb-20">
+                        <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm p-6 min-h-[500px]">
+                            
+                            {activeTab === 'intro' && (
+                                <div className="space-y-6">
+                                    <h3 className="text-2xl font-bold text-stone-800 border-b pb-2">{STUDY_CONTENT.intro.title}</h3>
+                                    <div className="grid gap-6">
+                                        {STUDY_CONTENT.intro.items.map((item, i) => (
+                                            <div key={i} className="border border-stone-200 rounded-xl p-5 hover:shadow-md transition bg-white">
+                                                <h4 className="font-bold text-xl text-cyan-700 mb-2">{item.term}</h4>
+                                                <p className="text-stone-700 mb-3 text-lg leading-relaxed whitespace-pre-wrap">{item.definition}</p>
+                                            </div>
+                                        ))}
+                                        {/* Special Block - Author Info */}
+                                        <div className="border-l-4 border-emerald-500 bg-emerald-50 p-6 rounded-r-xl">
+                                            <h4 className="font-bold text-xl text-emerald-800 mb-4 flex items-center"><User className="w-6 h-6 mr-2"/> {STUDY_CONTENT.intro.special_item.term}</h4>
+                                            <p className="text-emerald-900 font-bold mb-4">{STUDY_CONTENT.intro.special_item.definition}</p>
+                                            <div className="text-stone-700 leading-relaxed whitespace-pre-wrap text-sm bg-white/50 p-4 rounded-lg">
+                                                {STUDY_CONTENT.intro.special_item.long_desc}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'shape_sound' && (
+                                <div className="space-y-8">
+                                    <h3 className="text-2xl font-bold text-stone-800 border-b pb-2">{STUDY_CONTENT.shape_sound.title}</h3>
+                                    
+                                    <div>
+                                        <h4 className="text-lg font-bold text-purple-700 mb-3 bg-purple-50 p-2 rounded w-fit">一字多音與形近字</h4>
+                                        <div className="grid gap-4">
+                                            {STUDY_CONTENT.shape_sound.items.map((item, i) => (
+                                                <div key={i} className="bg-white border border-purple-100 p-4 rounded-lg shadow-sm">
+                                                    <div className="flex items-center mb-2">
+                                                        <span className="text-2xl font-bold text-purple-800 mr-3 border-r pr-3 border-purple-200">{item.char}</span>
+                                                    </div>
+                                                    <p className="text-stone-700 whitespace-pre-wrap leading-relaxed">{item.content}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="text-lg font-bold text-rose-700 mb-3 bg-rose-50 p-2 rounded w-fit">形音辨正 (同音/形近)</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {STUDY_CONTENT.shape_sound.confusing.map((item, i) => (
+                                                <div key={i} className="flex justify-between items-center bg-white border border-stone-200 p-3 rounded-lg">
+                                                    <span className="font-medium text-stone-800">{item.text}</span>
+                                                    <span className="text-sm font-mono text-rose-600 bg-rose-50 px-2 py-1 rounded">{item.sounds}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'idioms' && (
+                                <div className="space-y-8">
+                                    <h3 className="text-2xl font-bold text-stone-800 border-b pb-2">{STUDY_CONTENT.idioms.title}</h3>
+                                    
+                                    <div>
+                                        <h4 className="text-lg font-bold text-amber-700 mb-3 bg-amber-50 p-2 rounded w-fit flex items-center"><Leaf className="w-5 h-5 mr-2"/> 與「盼望」有關的成語</h4>
+                                        <div className="grid gap-4">
+                                            {STUDY_CONTENT.idioms.hope.map((item, i) => (
+                                                <div key={i} className="bg-white border border-amber-100 p-5 rounded-xl shadow-sm">
+                                                    <h5 className="font-bold text-lg text-amber-900 mb-2">{item.name}</h5>
+                                                    <p className="text-stone-700 mb-2">{item.mean}</p>
+                                                    {item.note && <p className="text-sm text-stone-500 italic bg-stone-50 p-2 rounded">{item.note}</p>}
+                                                    {renderImageSection(item)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="text-lg font-bold text-blue-700 mb-3 bg-blue-50 p-2 rounded w-fit flex items-center"><Mountain className="w-5 h-5 mr-2"/> 與「樹」有關的成語</h4>
+                                        <div className="grid gap-4">
+                                            {STUDY_CONTENT.idioms.tree.map((item, i) => (
+                                                <div key={i} className="bg-white border border-blue-100 p-5 rounded-xl shadow-sm">
+                                                    <h5 className="font-bold text-lg text-blue-900 mb-2">{item.name}</h5>
+                                                    <p className="text-stone-700">{item.mean}</p>
+                                                    {renderImageSection(item)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="text-lg font-bold text-red-700 mb-3 bg-red-50 p-2 rounded w-fit">課文深究 (課文解析)</h4>
+                                        <div className="grid gap-4">
+                                            {STUDY_CONTENT.idioms.analysis.map((item, i) => (
+                                                <div key={i} className="bg-white border-l-4 border-red-400 p-5 rounded shadow-sm">
+                                                    <h5 className="font-bold text-lg text-red-900 mb-1">{item.name}</h5>
+                                                    <p className="text-stone-700 mb-2 whitespace-pre-wrap leading-relaxed">{item.mean}</p>
+                                                    {renderImageSection(item)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'knowledge' && (
+                                <div className="space-y-8">
+                                    <h3 className="text-2xl font-bold text-stone-800 border-b pb-2">{STUDY_CONTENT.knowledge.title}</h3>
+                                    
+                                    <div>
+                                        <h4 className="text-lg font-bold text-green-700 mb-3 bg-green-50 p-2 rounded w-fit">作者與作品補充</h4>
+                                        <div className="space-y-4">
+                                            {STUDY_CONTENT.knowledge.concepts.map((item, i) => (
+                                                <div key={i} className="bg-green-50/50 p-5 rounded-xl border border-green-100">
+                                                    <h5 className="font-bold text-green-900 text-lg mb-1">{item.title} <span className="text-sm font-normal text-stone-500">({item.source})</span></h5>
+                                                    <p className="text-stone-700 leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                                                    {renderImageSection(item)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="text-lg font-bold text-stone-700 mb-3 bg-stone-100 p-2 rounded w-fit">寫作背景與意涵</h4>
+                                        <div className="grid md:grid-cols-2 gap-4">
+                                            {STUDY_CONTENT.knowledge.examples.map((item, i) => (
+                                                <div key={i} className="bg-white border border-stone-200 p-5 rounded-xl shadow-sm">
+                                                    <h5 className="font-bold text-stone-900 mb-2">{item.title}</h5>
+                                                    <p className="text-stone-600 text-sm leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                                                    {renderImageSection(item)}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h4 className="text-lg font-bold text-teal-700 mb-3 bg-teal-50 p-2 rounded w-fit">寫作手法和要點補充</h4>
+                                        <div className="space-y-2">
+                                            {STUDY_CONTENT.knowledge.techniques.map((tech, i) => (
+                                                <div key={i} className="bg-white p-4 rounded-lg border-l-4 border-teal-400 shadow-sm">
+                                                    <h5 className="text-stone-800 font-bold mb-1">{tech.title}</h5>
+                                                    <p className="text-stone-600 text-sm leading-relaxed">{tech.content}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'structure' && (
+                                <div className="space-y-6">
+                                    <h3 className="text-2xl font-bold text-stone-800 border-b pb-2">{STUDY_CONTENT.structure.title}</h3>
+                                    <div className="space-y-6">
+                                        {STUDY_CONTENT.structure.parts.map((part, i) => (
+                                            <div key={i} className="flex flex-col md:flex-row gap-4 bg-white border border-stone-200 p-6 rounded-xl shadow-sm hover:shadow-md transition">
+                                                <div className="flex-1">
+                                                    <span className="inline-block px-3 py-1 bg-stone-800 text-white text-xs rounded-full mb-3">{part.section}</span>
+                                                    <h4 className="text-xl font-bold text-stone-900 mb-2">{part.title}</h4>
+                                                    <p className="text-stone-600 leading-relaxed text-lg">{part.content}</p>
+                                                </div>
+                                                <div className="w-full md:w-1/3">
+                                                    {renderImageSection(part)}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const FullQuizModule = ({ user, onBack, onComplete }) => {
+            const [selectedCategory, setSelectedCategory] = useState(null); 
+            const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+            const [answers, setAnswers] = useState({});
+            const [favorites, setFavorites] = useState(new Set());
+            const [questions, setQuestions] = useState([]);
+            const [isAnswered, setIsAnswered] = useState(false);
+            const [showConfetti, setShowConfetti] = useState(false);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [hasSavedSession, setHasSavedSession] = useState(false);
+
+            // Init Check for Saved Session
+            useEffect(() => {
+                const saved = LocalDB.getProgress(STORAGE_KEYS.QUIZ_PROGRESS_FULL);
+                if (saved && saved.questions && saved.questions.length > 0) {
+                    setHasSavedSession(true);
+                }
+            }, []);
+
+            // Auto-save when state changes (if a quiz is active)
+            useEffect(() => {
+                if (selectedCategory && questions.length > 0) {
+                    LocalDB.saveProgress(STORAGE_KEYS.QUIZ_PROGRESS_FULL, {
+                        selectedCategory,
+                        questions,
+                        currentQuestionIndex,
+                        answers
+                    });
+                }
+            }, [selectedCategory, questions, currentQuestionIndex, answers]);
+
+            useEffect(() => {
+                if (!selectedCategory) return;
+                
+                // Only load new questions if we aren't resuming (resuming sets state directly)
+                if (questions.length === 0) {
+                    let filtered = [...ALL_QUESTIONS];
+                    if (selectedCategory !== 'all') {
+                        filtered = filtered.filter(q => q.category === selectedCategory);
+                    }
+                    filtered = filtered.sort(() => 0.5 - Math.random());
+                    setQuestions(filtered);
+                    setCurrentQuestionIndex(0);
+                    setAnswers({});
+                    setIsAnswered(false);
+                }
+            }, [selectedCategory]);
+
+            useEffect(() => {
+                const favSet = LocalDB.getFavorites();
+                const intSet = new Set(Array.from(favSet).map(id => parseInt(id)));
+                setFavorites(intSet);
+            }, []);
+
+            const handleResume = () => {
+                const saved = LocalDB.getProgress(STORAGE_KEYS.QUIZ_PROGRESS_FULL);
+                if (saved) {
+                    setQuestions(saved.questions);
+                    setAnswers(saved.answers);
+                    setCurrentQuestionIndex(saved.currentQuestionIndex);
+                    setSelectedCategory(saved.selectedCategory);
+                    
+                    // Determine if current question is already answered
+                    if (saved.answers[saved.questions[saved.currentQuestionIndex].id]) {
+                        setIsAnswered(true);
+                    }
+                }
+            };
+
+            const toggleFavorite = (qId) => {
+                const newFavs = LocalDB.toggleFavorite(qId);
+                const intSet = new Set(Array.from(newFavs).map(id => parseInt(id)));
+                setFavorites(intSet);
+            };
+
+            const handleAnswer = (option) => {
+                if (isAnswered) return; 
+                const currentQ = questions[currentQuestionIndex];
+                const isCorrect = option === currentQ.answer;
+                setAnswers(prev => ({ ...prev, [currentQ.id]: option }));
+                setIsAnswered(true);
+                if (isCorrect) {
+                    playSound('correct');
+                    setShowConfetti(true);
+                    setTimeout(() => setShowConfetti(false), 2500);
+                } else {
+                    playSound('incorrect');
+                }
+            };
+
+            const handleSubmit = () => {
+                if (isSubmitting) return; 
+                setIsSubmitting(true);
+                try {
+                    let score = 0;
+                    const details = questions.map(q => {
+                        const isCorrect = answers[q.id] === q.answer;
+                        if (isCorrect) score += 1;
+                        return {
+                            id: q.id,
+                            question: q.question,
+                            userAnswer: answers[q.id],
+                            correctAnswer: q.answer,
+                            isCorrect,
+                            options: q.options,
+                            category: q.category
+                        };
+                    });
+                    
+                    LocalDB.addHistory({
+                        score: Math.round((score / questions.length) * 100),
+                        total: questions.length,
+                        category: selectedCategory === 'all' ? '綜合挑戰' : selectedCategory,
+                        details: details
+                    });
+
+                    for (const detail of details) {
+                        if (!detail.isCorrect) {
+                            LocalDB.addMistake({
+                                id: detail.id,
+                                question: detail.question,
+                                answer: detail.correctAnswer,
+                                category: detail.category
+                            });
+                        }
+                    }
+
+                    // Clear progress on completion
+                    LocalDB.clearProgress(STORAGE_KEYS.QUIZ_PROGRESS_FULL);
+
+                    onComplete({ score: Math.round((score / questions.length) * 100), details });
+                } catch (error) {
+                    console.error(error);
+                    alert("儲存成績時發生錯誤");
+                    setIsSubmitting(false); 
+                }
+            };
+
+            if (!selectedCategory) {
+                // Updated categories for Flowering Tree
+                const categories = [
+                    { id: '注釋', label: '注釋與作者', icon: <BookOpen className="w-6 h-6 text-blue-500"/>, desc: '課文重點詞語與作者介紹' },
+                    { id: '形音義', label: '形音義', icon: <PenTool className="w-6 h-6 text-purple-500"/>, desc: '一字多義與形音辨正' },
+                    { id: '成語', label: '成語典故', icon: <List className="w-6 h-6 text-amber-500"/>, desc: '盼望與樹相關成語' },
+                    { id: '課文解析', label: '課文解析', icon: <Flower className="w-6 h-6 text-emerald-500"/>, desc: '詩句意涵與情感分析' },
+                    { id: '背景知識', label: '背景與寫作', icon: <BookMarked className="w-6 h-6 text-green-500"/>, desc: '作者席慕蓉與寫作手法' },
+                    { id: 'all', label: '全範圍綜合挑戰', icon: <Zap className="w-6 h-6 text-yellow-500"/>, desc: '包含以上所有單元的綜合測驗', isAll: true },
+                ];
+                return (
+                    <div className="h-full flex flex-col bg-stone-50">
+                        <div className="bg-white shadow-sm border-b px-4 py-3 flex items-center sticky top-0 z-10">
+                            <button onClick={onBack} className="flex items-center text-stone-600 hover:text-cyan-600 mr-4">
+                                <ArrowLeft className="w-5 h-5 mr-1" /> 返回
+                            </button>
+                            <h2 className="font-bold text-lg text-stone-800">選擇測驗單元</h2>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto">
+                            {hasSavedSession && (
+                                <div className="max-w-4xl mx-auto mb-6">
+                                    <button onClick={handleResume} className="w-full bg-stone-800 text-white p-4 rounded-xl shadow-lg hover:bg-stone-700 transition flex items-center justify-center animate-pulse">
+                                        <RotateCcw className="w-5 h-5 mr-2 text-emerald-400" />
+                                        <span className="font-bold text-lg">繼續上次未完成的測驗</span>
+                                    </button>
+                                </div>
+                            )}
+                            
+                            <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {categories.map(cat => (
+                                    <button key={cat.id} onClick={() => setSelectedCategory(cat.id)} className={`text-left p-6 rounded-2xl shadow-sm border-2 transition hover:shadow-md flex items-start ${cat.isAll ? 'bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-200 hover:border-yellow-400' : 'bg-white border-stone-100 hover:border-cyan-200'}`}>
+                                        <div className={`p-3 rounded-full mr-4 ${cat.isAll ? 'bg-white shadow-sm' : 'bg-stone-50'}`}>{cat.icon}</div>
+                                        <div>
+                                            <h3 className={`font-bold text-lg mb-1 ${cat.isAll ? 'text-yellow-800' : 'text-stone-800'}`}>{cat.label}</h3>
+                                            <p className="text-sm text-stone-500">{cat.desc}</p>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (questions.length === 0) return <LoadingScreen />;
+            const currentQ = questions[currentQuestionIndex];
+            const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
+            
+            return (
+                <div className="h-full flex flex-col bg-stone-50 relative">
+                    {showConfetti && <Confetti />}
+                    <div className="bg-white shadow-sm px-4 py-3 flex items-center justify-between z-10">
+                        <div className="flex items-center"><button onClick={onBack} className="flex items-center text-stone-500 hover:text-cyan-600 mr-4 px-3 py-1 rounded-full hover:bg-stone-50 transition border border-transparent hover:border-stone-200"><Home className="w-4 h-4 mr-1" /> <span className="text-sm font-medium">首頁</span></button><div className="flex items-center text-stone-500 border-l pl-4"><span className="font-mono text-lg font-bold text-cyan-600 mr-2">{currentQuestionIndex + 1}</span><span className="text-sm">/ {questions.length}</span></div></div>
+                        <div className="flex-1 mx-4 h-2 bg-stone-200 rounded-full overflow-hidden max-w-xs md:max-w-md hidden md:block"><div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: `${progress}%` }}></div></div>
+                        <button onClick={() => toggleFavorite(currentQ.id)} className={`p-2 rounded-full hover:bg-stone-100 transition`}><Heart className={`w-6 h-6 transition-colors duration-300 ${favorites.has(currentQ.id) ? 'fill-rose-500 text-rose-500' : 'text-stone-400'}`} /></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center">
+                        <div className="w-full max-w-2xl flex-1">
+                            <div className="bg-white rounded-2xl shadow-lg p-6 md:p-10 mb-6 relative">
+                                <span className="inline-block px-3 py-1 bg-cyan-100 text-cyan-700 text-xs font-bold rounded-full mb-4">{currentQ.category}</span>
+                                <h3 className="text-xl md:text-2xl font-bold text-stone-800 mb-8 leading-relaxed">{currentQ.question}</h3>
+                                <div className="space-y-3">{currentQ.options.map((opt, i) => {
+                                    let statusClass = "border-stone-100 hover:border-stone-300 text-stone-700";
+                                    if (isAnswered) { if (opt === currentQ.answer) { statusClass = "border-emerald-500 bg-emerald-50 text-emerald-900 font-bold"; } else if (opt === answers[currentQ.id]) { statusClass = "border-red-500 bg-red-50 text-red-900"; } else { statusClass = "border-stone-100 opacity-50"; } }
+                                    return (<button key={i} onClick={() => handleAnswer(opt)} disabled={isAnswered} className={`w-full text-left p-5 rounded-xl border-2 transition relative text-lg font-medium ${statusClass}`}><span className="inline-block w-6 font-bold text-stone-400 mr-2">{String.fromCharCode(65 + i)}.</span>{opt}{isAnswered && opt === currentQ.answer && <CheckCircle className="w-5 h-5 text-emerald-600 absolute right-4 top-1/2 -translate-y-1/2" />}{isAnswered && opt === answers[currentQ.id] && opt !== currentQ.answer && <XCircle className="w-5 h-5 text-red-600 absolute right-4 top-1/2 -translate-y-1/2" />}</button>);
+                                })}</div>
+                            </div>
+                            {isAnswered && (<div className={`rounded-xl p-6 mb-6 animate-fade-in ${answers[currentQ.id] === currentQ.answer ? 'bg-emerald-100 text-emerald-900' : 'bg-red-50 text-red-900'}`}><div className="flex items-center mb-2 font-bold text-lg">{answers[currentQ.id] === currentQ.answer ? <><CheckCircle className="w-6 h-6 mr-2" /> 答對了！</> : <><XCircle className="w-6 h-6 mr-2" /> 答錯了！</>}</div><div className="mt-4 text-xl"><span className="font-bold">正確答案：</span> {currentQ.answer}<div className="mt-3 text-stone-700 text-lg leading-relaxed"></div></div></div>)}
+                        </div>
+                    </div>
+                    <div className="bg-white p-4 border-t flex justify-between items-center z-10 sticky bottom-0">
+                        <div className="w-24"></div> 
+                        {isAnswered ? (currentQuestionIndex < questions.length - 1 ? (<button onClick={() => { setIsAnswered(false); setShowConfetti(false); setCurrentQuestionIndex(c => c + 1); }} className="px-8 py-3 bg-stone-800 text-white rounded-full hover:bg-stone-700 transition font-bold shadow-lg flex items-center animate-bounce-subtle">下一題 <ChevronRight className="w-5 h-5 ml-1" /></button>) : (<button onClick={handleSubmit} disabled={isSubmitting} className="px-8 py-3 bg-cyan-600 text-white rounded-full hover:bg-cyan-700 transition font-bold shadow-lg shadow-cyan-200 flex items-center disabled:opacity-50 disabled:cursor-not-allowed">{isSubmitting ? <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> 處理中...</> : <>查看總成績 <CheckCircle className="w-5 h-5 ml-2" /></>}</button>)) : (<div className="text-stone-400 text-sm italic">請選擇一個答案以繼續</div>)}<div className="w-24"></div>
+                    </div>
+                </div>
+            );
+        };
+
+        const QuickQuizModule = ({ onBack, onComplete }) => {
+            const [questions, setQuestions] = useState([]);
+            const [answers, setAnswers] = useState({});
+            const [score, setScore] = useState(0);
+            const [favorites, setFavorites] = useState(new Set());
+            const [showConfetti, setShowConfetti] = useState(false);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [showResumeDialog, setShowResumeDialog] = useState(false);
+            const scrollRef = useRef(null);
+
+            useEffect(() => {
+                const initQuiz = () => {
+                    const saved = LocalDB.getProgress(STORAGE_KEYS.QUIZ_PROGRESS_QUICK);
+                    if (saved && saved.questions && saved.questions.length > 0) {
+                        setShowResumeDialog(true);
+                        // Store temp data to state just in case, but rely on dialog choice
+                        return;
+                    } 
+                    startNewQuiz();
+                };
+                
+                // Initialize Favorites
+                const favSet = LocalDB.getFavorites();
+                const intSet = new Set(Array.from(favSet).map(id => parseInt(id)));
+                setFavorites(intSet);
+
+                initQuiz();
+            }, []);
+
+            // Save progress whenever answers change
+            useEffect(() => {
+                if (questions.length > 0 && Object.keys(answers).length > 0) {
+                    LocalDB.saveProgress(STORAGE_KEYS.QUIZ_PROGRESS_QUICK, {
+                        questions, // Must save order
+                        answers,
+                        score
+                    });
+                }
+            }, [answers, score, questions]);
+
+            const startNewQuiz = () => {
+                const shuffled = [...ALL_QUESTIONS].sort(() => 0.5 - Math.random());
+                setQuestions(shuffled);
+                setAnswers({});
+                setScore(0);
+                LocalDB.clearProgress(STORAGE_KEYS.QUIZ_PROGRESS_QUICK);
+            };
+
+            const resumeQuiz = () => {
+                const saved = LocalDB.getProgress(STORAGE_KEYS.QUIZ_PROGRESS_QUICK);
+                if (saved) {
+                    setQuestions(saved.questions);
+                    setAnswers(saved.answers);
+                    setScore(saved.score);
+                }
+                setShowResumeDialog(false);
+            };
+
+            const toggleFavorite = (qId) => {
+                const newFavs = LocalDB.toggleFavorite(qId);
+                const intSet = new Set(Array.from(newFavs).map(id => parseInt(id)));
+                setFavorites(intSet);
+            };
+
+            const handleAnswer = (qId, option, correctAns, category, questionText) => {
+                if (answers[qId]) return; // Already answered
+
+                const isCorrect = option === correctAns;
+                setAnswers(prev => ({ ...prev, [qId]: option }));
+                
+                if (isCorrect) {
+                    playSound('correct');
+                    setScore(prev => prev + 1);
+                } else {
+                    playSound('incorrect');
+                    // Immediate Mistake Recording
+                    LocalDB.addMistake({
+                        id: qId,
+                        question: questionText,
+                        answer: correctAns,
+                        category: category
+                    });
+                }
+            };
+
+            const handleFinish = () => {
+                if (isSubmitting) return;
+                setIsSubmitting(true);
+                
+                // Calculate detailed results for history
+                const details = questions.filter(q => answers[q.id]).map(q => ({
+                    id: q.id,
+                    question: q.question,
+                    userAnswer: answers[q.id],
+                    correctAnswer: q.answer,
+                    isCorrect: answers[q.id] === q.answer,
+                    options: q.options,
+                    category: q.category
+                }));
+
+                if (details.length > 0) {
+                     LocalDB.addHistory({
+                        score: Math.round((score / questions.length) * 100), 
+                        total: questions.length, 
+                        category: '快速測驗 (列表)',
+                        details: details
+                    });
+                }
+                
+                // Clear saved progress
+                LocalDB.clearProgress(STORAGE_KEYS.QUIZ_PROGRESS_QUICK);
+
+                onComplete({ 
+                    score: Math.round((score / questions.length) * 100), 
+                    details: details.length > 0 ? details : [] 
+                });
+            };
+
+            if (showResumeDialog) {
+                return (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl animate-fade-in text-center">
+                            <div className="bg-amber-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <History className="w-8 h-8 text-amber-600" />
+                            </div>
+                            <h3 className="text-xl font-bold text-stone-800 mb-2">發現未完成的測驗</h3>
+                            <p className="text-stone-500 mb-6">您上次還有未完成的快速測驗進度，是否要繼續？</p>
+                            <div className="flex gap-3">
+                                <button onClick={() => { setShowResumeDialog(false); startNewQuiz(); }} className="flex-1 py-3 border-2 border-stone-200 text-stone-600 rounded-xl font-bold hover:bg-stone-50 transition">
+                                    重新開始
+                                </button>
+                                <button onClick={resumeQuiz} className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition shadow-lg shadow-amber-200">
+                                    繼續測驗
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (questions.length === 0) return <LoadingScreen />;
+
+            return (
+                <div className="h-full flex flex-col bg-stone-100">
+                    {/* Header */}
+                    <div className="bg-white shadow-md border-b px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+                         <div className="flex items-center">
+                            <button onClick={onBack} className="flex items-center text-stone-600 hover:text-cyan-600 mr-4">
+                                <ArrowLeft className="w-5 h-5 mr-1" /> 返回
+                            </button>
+                            <h2 className="font-bold text-lg text-amber-600 flex items-center"><FastForward className="w-5 h-5 mr-2" /> 快速測驗模式</h2>
+                        </div>
+                        <div className="bg-stone-800 text-white px-4 py-1.5 rounded-full font-mono font-bold shadow-inner flex items-center">
+                            <span className="text-emerald-400 mr-2">答對: {score}</span> <span className="text-stone-500 text-xs mx-1">/</span> <span className="text-stone-300">總題數: {questions.length}</span>
+                        </div>
+                    </div>
+
+                    {/* Question List */}
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6" ref={scrollRef}>
+                        <div className="max-w-3xl mx-auto space-y-6">
+                            {questions.map((q, index) => {
+                                const userAnswer = answers[q.id];
+                                const isAnswered = !!userAnswer;
+                                const isCorrect = userAnswer === q.answer;
+                                
+                                return (
+                                    <div key={q.id} className={`bg-white rounded-xl shadow-sm border-l-4 p-5 transition-all ${isAnswered ? (isCorrect ? 'border-emerald-500 bg-emerald-50/30' : 'border-red-500 bg-red-50/30') : 'border-stone-200 hover:border-amber-300'}`}>
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div className="flex items-center">
+                                                <span className="bg-stone-100 text-stone-500 text-xs font-bold px-2 py-1 rounded mr-2">#{index + 1}</span>
+                                                <span className="bg-cyan-50 text-cyan-700 text-xs font-bold px-2 py-1 rounded">{q.category}</span>
+                                            </div>
+                                            <button onClick={() => toggleFavorite(q.id)} className="text-stone-300 hover:text-rose-500 transition">
+                                                 <Heart className={`w-5 h-5 ${favorites.has(q.id) ? 'fill-rose-500 text-rose-500' : ''}`} />
+                                            </button>
+                                        </div>
+
+                                        <h3 className="text-lg font-bold text-stone-800 mb-4">{q.question}</h3>
+
+                                        <div className="grid grid-cols-1 gap-3">
+                                            {q.options.map((opt, i) => {
+                                                let btnClass = "border-stone-200 text-stone-600 hover:bg-stone-50";
+                                                let icon = null;
+
+                                                if (isAnswered) {
+                                                    if (opt === q.answer) {
+                                                        btnClass = "border-emerald-500 bg-emerald-100 text-emerald-800 font-bold ring-2 ring-emerald-200";
+                                                        icon = <CheckCircle className="w-5 h-5 ml-auto text-emerald-600" />;
+                                                    } else if (opt === userAnswer) { // Wrong answer selected
+                                                        btnClass = "border-red-500 bg-red-100 text-red-800 font-bold";
+                                                        icon = <XCircle className="w-5 h-5 ml-auto text-red-600" />;
+                                                    } else {
+                                                        btnClass = "border-stone-100 text-stone-400 opacity-50";
+                                                    }
+                                                }
+
+                                                return (
+                                                    <button 
+                                                        key={i} 
+                                                        onClick={() => handleAnswer(q.id, opt, q.answer, q.category, q.question)}
+                                                        disabled={isAnswered}
+                                                        className={`text-left px-4 py-3 rounded-lg border-2 transition flex items-center ${btnClass}`}
+                                                    >
+                                                        <span className="font-mono mr-2 opacity-50">{String.fromCharCode(65 + i)}.</span>
+                                                        <span className="flex-1">{opt}</span>
+                                                        {icon}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        
+                                        {/* Feedback Text */}
+                                        {isAnswered && !isCorrect && (
+                                            <div className="mt-3 text-sm text-red-600 font-bold flex items-center animate-fade-in">
+                                                <AlertCircle className="w-4 h-4 mr-1" /> 答錯了！正確答案是：{q.answer} (已加入錯題本)
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        
+                        {/* Finish Button Area */}
+                        <div className="max-w-3xl mx-auto mt-8 mb-10">
+                            <button 
+                                onClick={handleFinish} 
+                                className="w-full bg-stone-800 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-stone-700 transition flex items-center justify-center text-lg"
+                            >
+                                <CheckCircle className="w-6 h-6 mr-2 text-emerald-400" /> 結束測驗並查看結果
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ResultReview = ({ result, onExit }) => {
+            return (
+                <div className="h-full bg-stone-50 overflow-y-auto">
+                    <div className="max-w-3xl mx-auto p-6">
+                        <div className="bg-white rounded-3xl shadow-lg p-8 mb-8 text-center relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-cyan-500 to-blue-500"></div>
+                            <h2 className="text-3xl font-bold text-stone-800 mb-2">測驗結果</h2>
+                            <div className="text-6xl font-black text-cyan-600 my-4">{result.score}<span className="text-2xl text-stone-400 font-normal">分</span></div>
+                            <div className="flex justify-center gap-4 text-sm text-stone-500">
+                                <span>總題數: {result.details.length}</span>
+                                <span className="text-green-600">答對: {result.details.filter(d => d.isCorrect).length}</span>
+                                <span className="text-red-500">答錯: {result.details.filter(d => !d.isCorrect).length}</span>
+                            </div>
+                            <button onClick={onExit} className="mt-8 px-8 py-2 border border-stone-300 rounded-full hover:bg-stone-50 transition">
+                                返回首頁
+                            </button>
+                        </div>
+
+                        <h3 className="text-xl font-bold text-stone-800 mb-4 px-2">試題解析</h3>
+                        <div className="space-y-4">
+                            {result.details.length === 0 ? <p className="text-center text-stone-500 py-4">本次測驗未作答任何題目。</p> : null}
+                            {result.details.map((item, i) => (
+                                <div key={i} className={`bg-white rounded-xl shadow-sm p-6 border-l-4 ${item.isCorrect ? 'border-emerald-500' : 'border-red-500'}`}>
+                                    <div className="flex items-start justify-between mb-3">
+                                        <h4 className="font-bold text-lg text-stone-800 flex-1">{i + 1}. {item.question}</h4>
+                                        {item.isCorrect 
+                                            ? <CheckCircle className="w-6 h-6 text-emerald-500 flex-shrink-0" />
+                                            : <XCircle className="w-6 h-6 text-red-500 flex-shrink-0" />
+                                        }
+                                    </div>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex items-center">
+                                            <span className="w-20 text-stone-500">您的答案：</span>
+                                            <span className={`font-bold ${item.isCorrect ? 'text-emerald-700' : 'text-red-600'}`}>
+                                                {item.userAnswer || '(未作答)'}
+                                            </span>
+                                        </div>
+                                        {!item.isCorrect && (
+                                            <div className="flex items-center">
+                                                <span className="w-20 text-stone-500">正確答案：</span>
+                                                <span className="font-bold text-emerald-700">{item.correctAnswer}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ListView = ({ title, type, user, onBack }) => {
+            const [items, setItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [expandedId, setExpandedId] = useState(null);
+
+            useEffect(() => {
+                const fetchData = async () => {
+                    let data = [];
+                    
+                    if (type === 'history') {
+                        data = LocalDB.getHistory();
+                    } else if (type === 'mistakes') {
+                        data = LocalDB.getMistakes();
+                    } else if (type === 'favorites') {
+                        const favSet = LocalDB.getFavorites();
+                        const favIds = Array.from(favSet).map(id => parseInt(id));
+                        data = ALL_QUESTIONS.filter(q => favIds.includes(q.id));
+                    }
+
+                    setItems(data);
+                    setLoading(false);
+                };
+                fetchData();
+            }, [user, type]);
+
+            if (loading) return <LoadingScreen />;
+
+            return (
+                <div className="h-full bg-stone-50 flex flex-col">
+                    <div className="bg-white shadow-sm border-b px-4 py-3 flex items-center sticky top-0 z-10">
+                        <button onClick={onBack} className="flex items-center text-stone-600 hover:text-cyan-600 mr-4">
+                            <ArrowLeft className="w-5 h-5 mr-1" /> 返回
+                        </button>
+                        <h2 className="font-bold text-lg">{title}</h2>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                        <div className="max-w-3xl mx-auto space-y-4">
+                            {items.length === 0 && (
+                                <div className="text-center py-20 text-stone-400">
+                                    <p>目前沒有紀錄</p>
+                                </div>
+                            )}
+
+                            {/* History Item */}
+                            {type === 'history' && items.map((item) => (
+                                <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition">
+                                    <div 
+                                        className="flex justify-between items-center cursor-pointer" 
+                                        onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                                    >
+                                        <div>
+                                            <div className="text-stone-500 text-xs mb-1">
+                                                {item.date ? new Date(item.date).toLocaleString() : 'Just now'}
+                                            </div>
+                                            <div className="font-bold text-stone-800 flex items-center">
+                                                <span className="mr-2 text-sm bg-stone-100 px-2 py-0.5 rounded text-stone-600">
+                                                    {item.category || '綜合挑戰'}
+                                                </span>
+                                                測驗得分：
+                                                <span className={`text-lg ml-1 ${item.score >= 80 ? 'text-emerald-600' : 'text-orange-600'}`}>
+                                                    {item.score}
+                                                </span> 分
+                                            </div>
+                                        </div>
+                                        {expandedId === item.id ? (
+                                            <ChevronUp className="w-5 h-5 text-stone-400" />
+                                        ) : (
+                                            <ChevronDown className="w-5 h-5 text-stone-400" />
+                                        )}
+                                    </div>
+                                    
+                                    {/* Enhanced Detail View for History */}
+                                    {expandedId === item.id && (
+                                        <div className="mt-4 pt-4 border-t border-stone-100 space-y-4">
+                                            {item.details.map((d, i) => (
+                                                <div key={i} className="bg-stone-50 p-4 rounded-lg border border-stone-200">
+                                                    {/* Question Header */}
+                                                    <div className="flex items-start mb-3">
+                                                        <span className="font-mono font-bold text-orange-600 mr-2 mt-0.5">{i+1}.</span>
+                                                        <h4 className="font-bold text-stone-800 text-lg leading-snug flex-1">
+                                                            {d.question}
+                                                        </h4>
+                                                        {d.isCorrect 
+                                                            ? <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 ml-2" />
+                                                            : <XCircle className="w-5 h-5 text-red-500 flex-shrink-0 ml-2" />
+                                                        }
+                                                    </div>
+
+                                                    {/* Options Display */}
+                                                    <div className="space-y-1 mb-3 pl-6">
+                                                        {d.options && d.options.map((opt, idx) => {
+                                                            let optionStyle = "text-stone-600";
+                                                            let icon = null;
+
+                                                            if (opt === d.correctAnswer) {
+                                                                optionStyle = "bg-emerald-100 text-emerald-800 font-bold border-emerald-200";
+                                                                icon = <CheckCircle className="w-4 h-4 ml-2 inline" />;
+                                                            } else if (opt === d.userAnswer && !d.isCorrect) {
+                                                                optionStyle = "bg-red-50 text-red-800 line-through border-red-100";
+                                                                icon = <XCircle className="w-4 h-4 ml-2 inline" />;
+                                                            }
+
+                                                            return (
+                                                                <div key={idx} className={`px-3 py-2 rounded text-sm border border-transparent ${optionStyle} flex items-center`}>
+                                                                    <span className="font-mono w-5 opacity-50 mr-1">{String.fromCharCode(65 + idx)}.</span>
+                                                                    <span className="flex-1">{opt}</span>
+                                                                    {icon}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {/* Analysis / Feedback Section */}
+                                                    <div className="bg-white p-3 rounded border border-stone-100 text-sm mt-2 pl-6 relative">
+                                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-400 rounded-l"></div>
+                                                        <div className="flex flex-col sm:flex-row gap-y-1 sm:gap-x-6 text-sm mb-1">
+                                                            <div>
+                                                                <span className="text-stone-400 mr-2">您的作答:</span>
+                                                                <span className={`font-bold ${d.isCorrect ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                                    {d.userAnswer || '未作答'}
+                                                                </span>
+                                                            </div>
+                                                            {!d.isCorrect && (
+                                                                <div>
+                                                                    <span className="text-stone-400 mr-2">正確答案:</span>
+                                                                    <span className="font-bold text-emerald-600">{d.correctAnswer}</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+
+                            {/* Mistakes & Favorites List */}
+                            {(type === 'mistakes' || type === 'favorites') && items.map((item) => (
+                                <div key={item.id} className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-orange-400">
+                                    <div className="flex justify-between mb-3">
+                                        <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded">{item.category || (ALL_QUESTIONS.find(q=>q.id === item.id)?.category)}</span>
+                                        {type === 'mistakes' ? (
+                                            <span className="text-xs text-red-500 font-bold">答錯</span>
+                                        ) : (
+                                            <Heart className="w-5 h-5 fill-rose-500 text-rose-500" />
+                                        )}
+                                    </div>
+                                    <h3 className="font-bold text-lg text-stone-800 mb-3">{item.question}</h3>
+                                    <div className="bg-emerald-50 p-3 rounded text-sm text-emerald-800">
+                                        <span className="font-bold">正確答案：</span> {item.answer || (ALL_QUESTIONS.find(q=>q.id === item.id)?.answer)}
+                                    </div>
+                                    
+                                    {/* Controls for removal */}
+                                    <div className="mt-4 flex justify-end">
+                                        {type === 'mistakes' && (
+                                            <button 
+                                                onClick={async (e) => {
+                                                    e.target.innerText = "已移除";
+                                                    e.target.disabled = true;
+                                                    LocalDB.removeMistake(item.id);
+                                                }}
+                                                className="text-sm text-stone-400 hover:text-red-500 flex items-center"
+                                            >
+                                                <CheckCircle className="w-4 h-4 mr-1"/> 我學會了（移除）
+                                            </button>
+                                        )}
+                                        {type === 'favorites' && (
+                                            <button 
+                                                onClick={async (e) => {
+                                                    e.target.innerText = "已取消收藏";
+                                                    e.target.disabled = true;
+                                                    LocalDB.removeFavorite(item.id);
+                                                }}
+                                                className="text-sm text-stone-400 hover:text-red-500 flex items-center"
+                                            >
+                                                <Heart className="w-4 h-4 mr-1"/> 取消收藏
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [view, setView] = useState('auth'); 
+            const [loading, setLoading] = useState(true);
+            const [quizResult, setQuizResult] = useState(null);
+
+            useEffect(() => {
+                const checkLogin = () => {
+                    const savedUser = LocalDB.getUser();
+                    if (savedUser) {
+                        setUser(savedUser);
+                        setView('dashboard');
+                    } else {
+                        setUser(null);
+                        setView('auth');
+                    }
+                    setLoading(false);
+                };
+                checkLogin();
+            }, []);
+
+            if (loading) return <LoadingScreen />;
+
+            if (view === 'auth') return <AuthScreen onLogin={(u) => { setUser(u); setView('dashboard'); }} />;
+            if (view === 'dashboard') return <Dashboard user={user} onLogout={() => { setUser(null); setView('auth'); }} onNavigate={setView} />;
+            if (view === 'learn') return <LearningModule onBack={() => setView('dashboard')} />;
+            if (view === 'quiz_setup') {
+                return <FullQuizModule user={user} onBack={() => setView('dashboard')} onComplete={(res) => { setQuizResult(res); setView('quiz_result'); }} />;
+            }
+            if (view === 'quick_quiz') {
+                 return <QuickQuizModule onBack={() => setView('dashboard')} onComplete={(res) => { setQuizResult(res); setView('quiz_result'); }} />;
+            }
+            if (view === 'quiz_result') return <ResultReview result={quizResult} onExit={() => setView('dashboard')} />;
+            if (view === 'history') return <ListView title="測驗歷史紀錄" type="history" user={user} onBack={() => setView('dashboard')} />;
+            if (view === 'mistakes') return <ListView title="錯題本 (尚未掌握)" type="mistakes" user={user} onBack={() => setView('dashboard')} />;
+            if (view === 'favorites') return <ListView title="我的題目收藏" type="favorites" user={user} onBack={() => setView('dashboard')} />;
+
+            return <div className="p-4 text-center">未知頁面</div>;
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
