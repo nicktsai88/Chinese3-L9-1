@@ -80,10 +80,73 @@
             ChevronRight, LogOut, User, ArrowLeft, Zap, Volume2, Home, LayoutGrid, 
             Layers, ChevronDown, ChevronUp, Loader2, Sparkles, Image as ImageIcon, Download, ImageOff,
             Gavel, Scale, FileText, List, Leaf, Droplets, Tent, Mountain, PlayCircle, FastForward, RotateCcw,
-            Flower, BookMarked, Camera, Save
+            Flower, BookMarked
         } from 'lucide-react';
 
+        // --- API Key Configuration ---
+        const apiKey = ""; 
+
+        // --- Helper: Convert PNG Data URL to JPG Data URL ---
+        const convertPngToJpg = (pngDataUrl) => {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    const jpgDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                    resolve(jpgDataUrl);
+                };
+                img.onerror = reject;
+                img.src = pngDataUrl;
+            });
+        };
+
+        // --- API Helper for Image Generation ---
+        const generateAIImage = async (prompt) => {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+            // 更新 Prompt 風格
+            const enhancedPrompt = prompt + ", masterpiece, best quality, oil painting style, emotional atmosphere, poetic, detailed background, soft lighting";
+
+            const payload = {
+                instances: [ { prompt: enhancedPrompt } ],
+                parameters: { sampleCount: 1, aspectRatio: "4:3" }
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API call failed: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                const base64Image = result.predictions?.[0]?.bytesBase64Encoded;
+                
+                if (base64Image) {
+                    const pngDataUrl = `data:image/png;base64,${base64Image}`;
+                    const jpgDataUrl = await convertPngToJpg(pngDataUrl);
+                    return jpgDataUrl;
+                } else {
+                    throw new Error("No image data in response");
+                }
+            } catch (error) {
+                console.error("Image generation error:", error);
+                alert("圖片生成失敗，請稍後再試。");
+                return null;
+            }
+        };
+
         // --- LocalStorage Database Helper ---
+        // Modified keys to Chinese3-L9-1 per user request
         const STORAGE_KEYS = {
             USER: 'Chinese3-L9-1_user', 
             HISTORY: 'Chinese3-L9-1_history',
@@ -154,6 +217,7 @@
                 favs.delete(id.toString());
                 localStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(Array.from(favs)));
             },
+            // --- Quiz Progress Methods ---
             saveProgress: (key, data) => {
                 localStorage.setItem(key, JSON.stringify(data));
             },
@@ -166,109 +230,109 @@
             }
         };
         
-        // --- Global Data Definitions ---
+        // --- Global Data Definitions (一棵開花的樹 Content) ---
         const STUDY_CONTENT = {
             intro: {
                 title: "注釋補充",
                 items: [
-                    { term: "1. 基調", definition: "主要的中心思想或觀念。", filename: "key_tone" },
-                    { term: "2. 因緣", definition: "緣分、機緣。", filename: "destiny_connection" },
-                    { term: "3. 殷切", definition: "熱切、急切。", filename: "eager_anticipation" },
-                    { term: "4. 家境殷實", definition: "家境充足、富裕。", filename: "wealthy_family" },
-                    { term: "5. 心儀", definition: "內心仰慕。", filename: "admiration" },
-                    { term: "6. 遒勁", definition: "強勁有力。", filename: "vigorous_strokes" },
-                    { term: "7. 飄逸", definition: "灑脫自然，超凡脫俗。", filename: "elegant_floating" },
-                    { term: "8. 求「祂」讓我們結一段塵緣", definition: "泛指一般神明的第三人稱代名詞，此處指「佛」。", filename: "praying_buddha" },
-                    { term: "9. 盼望", definition: "近義渴望、企盼。", filename: "longing_hope" },
-                    { term: "10. 細聽", definition: "仔細地聽，有全神貫注之意。近義聆聽、諦聽、傾聽。", filename: "listening_intently" },
-                    { term: "11. 落了一地", definition: "形容多到了極點。", filename: "fallen_petals" },
-                    { term: "12. 塵緣", definition: "佛教稱「色、聲、香、味、觸、法」為六塵，六塵與我接觸，為心之所緣，故名。", filename: "earthly_affinity" },
-                    { term: "13. 無視", definition: "近義視而不見。", filename: "ignore_indifference" },
-                    { term: "14. 睹", definition: "看見。", filename: "seeing_eye" },
-                    { term: "15. 凋零的心", definition: "凋零：(1) 本指植物的凋謝零落。後指人的死亡。(2) 比喻事物的衰敗。", filename: "withered_heart" },
-                    { term: "16. 祝禱", definition: "祝告神靈以祈福保平安。", filename: "prayer_blessing" },
-                    { term: "17. 惆悵", definition: "悲愁、失意。", filename: "melancholy" },
-                    { term: "18. 跌宕", definition: "形容詞句運用的變化起伏。", filename: "rhythmic_undulation" },
-                    { term: "19. 落花有意，流水無情", definition: "比喻一方有意，另一方卻無情。", filename: "unrequited_love" },
-                    { term: "20. 萬紫千紅", definition: "形容群花盛開，多彩絢爛的景象。", filename: "colorful_flowers" },
-                    { term: "21. 剛愎自用", definition: "性情倔強，固執己見。", filename: "stubborn_self_willed" },
-                    { term: "22. 痴心妄想", definition: "痴迷地幻想著不能實現的事情。", filename: "wishful_thinking" }
+                    { term: "1. 基調", definition: "主要的中心思想或觀念。", prompt: "Abstract concept of a central theme or melody, soft colors" },
+                    { term: "2. 因緣", definition: "緣分、機緣。", prompt: "Red threads of destiny connecting people in a mist" },
+                    { term: "3. 殷切", definition: "熱切、急切。", prompt: "Eager face looking forward to something, emotional" },
+                    { term: "4. 家境殷實", definition: "家境充足、富裕。", prompt: "A wealthy and comfortable traditional Chinese courtyard" },
+                    { term: "5. 心儀", definition: "內心仰慕。", prompt: "A girl secretly admiring someone from afar, romantic atmosphere" },
+                    { term: "6. 遒勁", definition: "強勁有力。", prompt: "Powerful calligraphy strokes or strong ancient tree branches" },
+                    { term: "7. 飄逸", definition: "灑脫自然，超凡脫俗。", prompt: "Elegant fabric or figure flowing in the wind, ethereal" },
+                    { term: "8. 求「祂」讓我們結一段塵緣", definition: "泛指一般神明的第三人稱代名詞，此處指「佛」。", prompt: "A serene statue of Buddha in an ancient temple" },
+                    { term: "9. 盼望", definition: "近義渴望、企盼。", prompt: "Looking out of a window waiting for someone, longing" },
+                    { term: "10. 細聽", definition: "仔細地聽，有全神貫注之意。近義聆聽、諦聽、傾聽。", prompt: "Ear close to nature listening intently to the wind" },
+                    { term: "11. 落了一地", definition: "形容多到了極點。", prompt: "Flower petals covering the ground completely, carpet of petals" },
+                    { term: "12. 塵緣", definition: "佛教稱「色、聲、香、味、觸、法」為六塵，六塵與我接觸，為心之所緣，故名。", prompt: "Buddhist concept of worldly connections, spiritual visualization" },
+                    { term: "13. 無視", definition: "近義視而不見。", prompt: "Walking past something beautiful without looking, indifference" },
+                    { term: "14. 睹", definition: "看見。", prompt: "Eye seeing something clearly" },
+                    { term: "15. 凋零的心", definition: "凋零：(1) 本指植物的凋謝零落。後指人的死亡。(2) 比喻事物的衰敗。", prompt: "Withered heart or dying flower, melancholic" },
+                    { term: "16. 祝禱", definition: "祝告神靈以祈福保平安。", prompt: "Hands clasped in sincere prayer" },
+                    { term: "17. 惆悵", definition: "悲愁、失意。", prompt: "A person standing alone feeling melancholy at sunset" },
+                    { term: "18. 跌宕", definition: "形容詞句運用的變化起伏。", prompt: "Waves rising and falling, rhythmic flow visual representation" },
+                    { term: "19. 落花有意，流水無情", definition: "比喻一方有意，另一方卻無情。", prompt: "Flowers falling into a stream that flows away, poetic scene" },
+                    { term: "20. 萬紫千紅", definition: "形容群花盛開，多彩絢爛的景象。", prompt: "A garden full of colorful blooming flowers, vibrant" },
+                    { term: "21. 剛愎自用", definition: "性情倔強，固執己見。", prompt: "A stubborn person refusing advice, stern expression" },
+                    { term: "22. 痴心妄想", definition: "痴迷地幻想著不能實現的事情。", prompt: "Daydreaming about impossible things, dream bubble" }
                 ],
                 special_item: {
                     term: "作者：席慕蓉",
                     definition: "本名穆倫．席連勃，意即大江河。",
                     long_desc: "「慕蓉」是「穆倫」的音譯。席慕蓉自云：\n(1) 畫畫是我終身投入的一種工作。\n(2) 寫作是我放鬆的一面，是我抽身的一種方法。\n(3) 寫詩是我給我自己的獎品。\n(4) 散文是對生命的一種驚嘆！\n\n作品《七里香》於民國七十年由大地出版社出版，是席慕蓉的第一本詩集，文字平易近人，內容多敘青春情懷，道出男女之間情感的糾葛纏綿，頗能與現今社會人們的內心互相呼應，因此廣受大眾歡迎。",
-                    filename: "author_xi_murong"
+                    prompt: "Portrait of female poet Xi Murong, artistic style"
                 }
             },
             shape_sound: {
                 title: "形音義補充",
                 items: [
-                    { char: "一", content: "表裡如「一」：相同、一致。\n「一」石二鳥：單一個。\n「一」不小心：偶然。\n「一」身是膽：全、滿、整。", filename: "character_one" },
-                    { char: "慎/嗔", content: "「慎」重：慎 (ㄕㄣˋ)\n「嗔」怒：嗔 (ㄔㄣ)", filename: "cautious_vs_angry" },
-                    { char: "慕/幕", content: "愛「慕」：慕 (ㄇㄨˋ)\n序「幕」：幕 (ㄇㄨˋ)", filename: "admire_vs_curtain" },
-                    { char: "壇/顫", content: "祭「壇」：壇 (ㄊㄢˊ)\n「顫」抖：顫 (ㄓㄢˋ)", filename: "altar_vs_tremble" }
+                    { char: "一", content: "表裡如「一」：相同、一致。\n「一」石二鳥：單一個。\n「一」不小心：偶然。\n「一」身是膽：全、滿、整。" },
+                    { char: "慎/嗔", content: "「慎」重：慎 (ㄕㄣˋ)\n「嗔」怒：嗔 (ㄔㄣ)" },
+                    { char: "慕/幕", content: "愛「慕」：慕 (ㄇㄨˋ)\n序「幕」：幕 (ㄇㄨˋ)" },
+                    { char: "壇/顫", content: "祭「壇」：壇 (ㄊㄢˊ)\n「顫」抖：顫 (ㄓㄢˋ)" }
                 ],
                 confusing: [
-                    { text: "睹 / 堵 / 賭", sounds: "ㄉㄨˇ (皆同音)", filename: "see_block_gamble" },
-                    { text: "竇 / 荳", sounds: "ㄉㄡˋ (皆同音)", filename: "hole_bean" },
-                    { text: "蹈 / 道", sounds: "ㄉㄠˋ (皆同音)", filename: "dance_road" },
-                    { text: "抒 / 舒 / 紓", sounds: "ㄕㄨ (皆同音)", filename: "express_relax_relieve" },
-                    { text: "辨 / 辯 / 辮 / 瓣", sounds: "ㄅㄧㄢˋ / ㄅㄧㄢˋ / ㄅㄧㄢˋ / ㄅㄢˋ", filename: "distinguish_debate_braid_petal" }
+                    { text: "睹 / 堵 / 賭", sounds: "ㄉㄨˇ (皆同音)" },
+                    { text: "竇 / 荳", sounds: "ㄉㄡˋ (皆同音)" },
+                    { text: "蹈 / 道", sounds: "ㄉㄠˋ (皆同音)" },
+                    { text: "抒 / 舒 / 紓", sounds: "ㄕㄨ (皆同音)" },
+                    { text: "辨 / 辯 / 辮 / 瓣", sounds: "ㄅㄧㄢˋ / ㄅㄧㄢˋ / ㄅㄧㄢˋ / ㄅㄢˋ" }
                 ]
             },
             idioms: {
                 title: "成語典故與解析",
                 hope: [
-                    { name: "朝思暮想", mean: "白天晚上都在想念。形容思念極深。", filename: "thinking_day_night" },
-                    { name: "夢寐以求", mean: "睡夢中都在尋找、追求。形容願望強烈、迫切。語本《詩經．周南．關雎》：「窈窕淑女，寤寐求之，求之不得，寤寐思服。」", filename: "dreaming_desire" },
-                    { name: "望穿秋水", mean: "形容盼望的深切。秋水，秋天的水明淨澄澈，比喻眼睛。", filename: "waiting_anxiously" },
-                    { name: "望眼欲穿", mean: "形容企盼的深切。", filename: "gazing_longingly" },
-                    { name: "引領企踵", mean: "伸長脖子，提起腳跟。形容殷切期盼。", filename: "eagerly_looking_forward" }
+                    { name: "朝思暮想", mean: "白天晚上都在想念。形容思念極深。", prompt: "Thinking about someone day and night" },
+                    { name: "夢寐以求", mean: "睡夢中都在尋找、追求。形容願望強烈、迫切。語本《詩經．周南．關雎》：「窈窕淑女，寤寐求之，求之不得，寤寐思服。」", prompt: "Dreaming about something desired" },
+                    { name: "望穿秋水", mean: "形容盼望的深切。秋水，秋天的水明淨澄澈，比喻眼睛。", prompt: "Looking at horizon with longing eyes" },
+                    { name: "望眼欲穿", mean: "形容企盼的深切。", prompt: "Staring intensely waiting for someone" },
+                    { name: "引領企踵", mean: "伸長脖子，提起腳跟。形容殷切期盼。", prompt: "Tiptoeing and looking forward eagerly" }
                 ],
                 tree: [
-                    { name: "別樹一幟", mean: "稱人的思想、學問有創見，自成一家。", filename: "unique_style" },
-                    { name: "蚍蜉撼樹", mean: "比喻不自量力。蚍蜉，大螞蟻。原句指以大螞蟻的力量想去搖動大樹。", filename: "ant_shaking_tree" },
-                    { name: "百年樹人", mean: "形容培育人才的不容易。樹，動詞，種植、栽培。", filename: "education_cultivation" },
-                    { name: "樹大招風", mean: "比喻個人名聲太大，容易招來妒嫉毀謗。", filename: "tall_tree_wind" },
-                    { name: "火樹銀花", mean: "形容燈火通明，燈光燦爛的景象。", filename: "fireworks_lanterns" },
-                    { name: "鐵樹開花", mean: "比喻事物罕見或極難實現。", filename: "rare_occurrence" }
+                    { name: "別樹一幟", mean: "稱人的思想、學問有創見，自成一家。", prompt: "A unique flag on a solitary tree" },
+                    { name: "蚍蜉撼樹", mean: "比喻不自量力。蚍蜉，大螞蟻。原句指以大螞蟻的力量想去搖動大樹。", prompt: "Ant trying to shake a giant tree" },
+                    { name: "百年樹人", mean: "形容培育人才的不容易。樹，動詞，種植、栽培。", prompt: "Old teacher teaching students under a tree" },
+                    { name: "樹大招風", mean: "比喻個人名聲太大，容易招來妒嫉毀謗。", prompt: "Big tree swaying in strong wind" },
+                    { name: "火樹銀花", mean: "形容燈火通明，燈光燦爛的景象。", prompt: "Fireworks and lanterns lighting up the night" },
+                    { name: "鐵樹開花", mean: "比喻事物罕見或極難實現。", prompt: "Iron tree blooming flowers" }
                 ],
                 analysis: [
-                    { name: "詩中的「我」", mean: "詩中的「我」是指一名 (少女)，她期盼在最美麗的時刻與 (心儀) 的對象相遇。不僅表達對愛情的 (憧憬)，也希望在對方面前展現出自己 (最美麗) 的一面。", filename: "girl_in_poem" },
-                    { name: "虔敬的心情", mean: "以 (虔敬) 的心情，表現出對愛情的 (深切期盼)，希望能與心儀的人相遇，且有美好的結局。", filename: "sincere_prayer" },
-                    { name: "第一節：少女心境", mean: "以誇飾的手法，凸顯少女的痴情。 ★少女心境：(虔誠祈願)。以 (戲劇) 的情節寫出少女的 (深情)、(痴想) 感動了佛，而助其達成相遇的願望。少女漫長的期盼終於有了 (轉機)。", filename: "praying_buddha_scene" },
-                    { name: "第一節：細節分析", mean: "(1)「開滿了花」呼應首節「在我最 (美麗) 的時刻」。亮麗的陽光下，開滿了花，表達竭盡心思來 (吸引) 對方的目光。\n(2)「慎重地」三字強調出自己不是隨意綻放，而只為「你」而開，所以可見其對感情的態度是 (莊嚴)、(專注)、且 (真誠) 的。\n(3)「前世的盼望」一詞，指明感情由來已 (久) 而且 (深摯)，呼應了首節「(求了五百年)」。", filename: "blooming_sunlight" },
-                    { name: "第二節：少女心境", mean: "以戲劇化的情節，寫出少女的痴情與想望 —— 佛將她化成一棵樹，助其實現宿願 —— 讓兩人有相遇的機會。 ★少女心境：(熱切等待)。", filename: "waiting_tree" },
-                    { name: "第二節：細節分析", mean: "(1) 面對一棵花樹，不用視覺呈現，而富有變化地以「(聽)」字入筆，可與「情」字音韻和諧，並進一步表示渴望對方能傾聽「葉聲」，即自己「愛的 (心聲)」。\n(2) 因熱切盼望，殷殷守候，又不知心儀的人會如何 (回應)，所以忍不住顫抖，寫出「既 (期待) 又 (怕受傷害)」的 (緊張) 心情。", filename: "trembling_leaves" },
-                    { name: "第三節：少女心境", mean: "本節是全詩的高潮，少女熱烈期盼，卻換得男子無視地走過，以反差手法凸顯少女的落寞與感傷。 ★少女心境：(失落感傷)。", filename: "indifferent_man" },
-                    { name: "第三節：細節分析", mean: "(1) (冷漠) 的態度讓少女由期盼轉為 (失落)，「無視」花樹之 (美)，就更遑論聽見心聲了。（遑論：不必說、不用再說。）\n(2) 此句是情節轉折的關鍵句。\n(3)「花瓣」已不再是完整的花朵，而是凋謝零落、破碎、紛飛的片狀物，故用以形容希望 (幻滅) 的失落感，可說是心碎的 (落寞)、(感傷) 之情，也就是期盼落空、(傷心失望) 的感覺。", filename: "withered_petals_ground" }
+                    { name: "詩中的「我」", mean: "詩中的「我」是指一名 (少女)，她期盼在最美麗的時刻與 (心儀) 的對象相遇。不僅表達對愛情的 (憧憬)，也希望在對方面前展現出自己 (最美麗) 的一面。", prompt: "A girl full of expectations and dreams" },
+                    { name: "虔敬的心情", mean: "以 (虔敬) 的心情，表現出對愛情的 (深切期盼)，希望能與心儀的人相遇，且有美好的結局。", prompt: "A girl praying sincerely" },
+                    { name: "第一節：少女心境", mean: "以誇飾的手法，凸顯少女的痴情。 ★少女心境：(虔誠祈願)。以 (戲劇) 的情節寫出少女的 (深情)、(痴想) 感動了佛，而助其達成相遇的願望。少女漫長的期盼終於有了 (轉機)。", prompt: "Girl praying to Buddha" },
+                    { name: "第一節：細節分析", mean: "(1)「開滿了花」呼應首節「在我最 (美麗) 的時刻」。亮麗的陽光下，開滿了花，表達竭盡心思來 (吸引) 對方的目光。\n(2)「慎重地」三字強調出自己不是隨意綻放，而只為「你」而開，所以可見其對感情的態度是 (莊嚴)、(專注)、且 (真誠) 的。\n(3)「前世的盼望」一詞，指明感情由來已 (久) 而且 (深摯)，呼應了首節「(求了五百年)」。", prompt: "Tree blooming carefully in sunlight" },
+                    { name: "第二節：少女心境", mean: "以戲劇化的情節，寫出少女的痴情與想望 —— 佛將她化成一棵樹，助其實現宿願 —— 讓兩人有相遇的機會。 ★少女心境：(熱切等待)。", prompt: "A tree standing by the road waiting" },
+                    { name: "第二節：細節分析", mean: "(1) 面對一棵花樹，不用視覺呈現，而富有變化地以「(聽)」字入筆，可與「情」字音韻和諧，並進一步表示渴望對方能傾聽「葉聲」，即自己「愛的 (心聲)」。\n(2) 因熱切盼望，殷殷守候，又不知心儀的人會如何 (回應)，所以忍不住顫抖，寫出「既 (期待) 又 (怕受傷害)」的 (緊張) 心情。", prompt: "Trembling leaves in the wind" },
+                    { name: "第三節：少女心境", mean: "本節是全詩的高潮，少女熱烈期盼，卻換得男子無視地走過，以反差手法凸顯少女的落寞與感傷。 ★少女心境：(失落感傷)。", prompt: "Man walking past indifferent" },
+                    { name: "第三節：細節分析", mean: "(1) (冷漠) 的態度讓少女由期盼轉為 (失落)，「無視」花樹之 (美)，就更遑論聽見心聲了。（遑論：不必說、不用再說。）\n(2) 此句是情節轉折的關鍵句。\n(3)「花瓣」已不再是完整的花朵，而是凋謝零落、破碎、紛飛的片狀物，故用以形容希望 (幻滅) 的失落感，可說是心碎的 (落寞)、(感傷) 之情，也就是期盼落空、(傷心失望) 的感覺。", prompt: "Fallen petals on the ground" }
                 ]
             },
             knowledge: {
                 title: "背景與寫作手法",
                 concepts: [
-                    { title: "席慕蓉自述", source: "作者與作品補充", content: "(1) 畫畫是我終身投入的一種工作。\n(2) 寫作是我放鬆的一面，是我抽身的一種方法。\n(3) 寫詩是我給我自己的獎品。\n(4) 散文是對生命的一種驚嘆！", filename: "artist_poet_studio" },
-                    { title: "《七里香》", source: "作品介紹", content: "於民國七十年由大地出版社出版，是席慕蓉的第一本詩集，文字平易近人，內容多敘青春情懷，道出男女之間情感的糾葛纏綿，頗能與現今社會人們的內心互相呼應，因此廣受大眾歡迎。\n\n席慕蓉曾說，寫《七里香》的那段時間，是她一生中最安靜的時刻，那是讀書、戀愛、結婚、生子及只有一點點鄉愁的年歲，感覺靈敏而純粹，最是生命清靈的時刻。", filename: "book_seven_mile_fragrance" }
+                    { title: "席慕蓉自述", source: "作者與作品補充", content: "(1) 畫畫是我終身投入的一種工作。\n(2) 寫作是我放鬆的一面，是我抽身的一種方法。\n(3) 寫詩是我給我自己的獎品。\n(4) 散文是對生命的一種驚嘆！", prompt: "Artist painting and writing poetry" },
+                    { title: "《七里香》", source: "作品介紹", content: "於民國七十年由大地出版社出版，是席慕蓉的第一本詩集，文字平易近人，內容多敘青春情懷，道出男女之間情感的糾葛纏綿，頗能與現今社會人們的內心互相呼應，因此廣受大眾歡迎。\n\n席慕蓉曾說，寫《七里香》的那段時間，是她一生中最安靜的時刻，那是讀書、戀愛、結婚、生子及只有一點點鄉愁的年歲，感覺靈敏而純粹，最是生命清靈的時刻。", prompt: "Book cover of Seven Mile Fragrance" }
                 ],
                 examples: [
-                    { title: "寫作背景", content: "這首席慕蓉早期的詩之創作靈感，其實真的是一棵開滿桐花的油桐樹。那年，作者還在新竹教書，一天搭著由新竹開往苗栗的山線火車，當時正是桐花開放的季節，回頭望向山坡，一棵開滿油桐花、圓圓滿滿白花的油桐樹：在藍天下、在山坡上，在作者來不及驚嘆的時候，車一轉彎……樹不見了！但那驚鴻一瞥，卻令作者久久不能自已！作者悵然之際卻也對造物者的偉大深深感動。", filename: "train_view_tung_tree" },
-                    { title: "詩的深層意涵", content: "也許你可以解釋是男女之間的愛情；也可以解釋成人、物之間的感情。萬物皆有情，生命與生命相遇的珍惜、分享，有時是無法用講解來傳達的。這不正是「詩歌」迷人之所在——餘韻猶存、不同的體會感動只在個人心中。\n\n席慕蓉說：「有時候『一棵開花的樹』也是開給自己看的……。」「生命在青春時常常是錯過的，需要經過許多年你才會發現你套在對方身上的模式是錯的。但愛可以喚醒內在的美，美就是萬物有情、萬物有靈。」感情不該只是局限於男與女、人與人之間，生命與生命的交集更值得我們去珍惜！", filename: "spiritual_connection" }
+                    { title: "寫作背景", content: "這首席慕蓉早期的詩之創作靈感，其實真的是一棵開滿桐花的油桐樹。那年，作者還在新竹教書，一天搭著由新竹開往苗栗的山線火車，當時正是桐花開放的季節，回頭望向山坡，一棵開滿油桐花、圓圓滿滿白花的油桐樹：在藍天下、在山坡上，在作者來不及驚嘆的時候，車一轉彎……樹不見了！但那驚鴻一瞥，卻令作者久久不能自已！作者悵然之際卻也對造物者的偉大深深感動。", prompt: "White Tung flowers blooming on a hillside seen from a train" },
+                    { title: "詩的深層意涵", content: "也許你可以解釋是男女之間的愛情；也可以解釋成人、物之間的感情。萬物皆有情，生命與生命相遇的珍惜、分享，有時是無法用講解來傳達的。這不正是「詩歌」迷人之所在——餘韻猶存、不同的體會感動只在個人心中。\n\n席慕蓉說：「有時候『一棵開花的樹』也是開給自己看的……。」「生命在青春時常常是錯過的，需要經過許多年你才會發現你套在對方身上的模式是錯的。但愛可以喚醒內在的美，美就是萬物有情、萬物有靈。」感情不該只是局限於男與女、人與人之間，生命與生命的交集更值得我們去珍惜！", prompt: "Spiritual connection between nature and human" }
                 ],
                 techniques: [
-                    { title: "1. 音韻諧暢", content: "本詩音韻諧暢，詩中第一節的「前、年、緣」，第二節的「旁、望」，第三節的「近、心」、「聽、情」均有押韻的效果。", filename: "musical_rhythm" },
-                    { title: "2. 第一人稱", content: "用「我」的口吻敘述少女的單戀，屬於第 (一) 人稱。", filename: "first_person_diary" },
-                    { title: "3. 抒情詩", content: "是一首 (抒情) 詩，描述了女子對感情的 (期盼) 和 (失落)。", filename: "lyric_poetry_book" },
-                    { title: "4. 象徵手法", content: "以「一棵開花的樹」(象徵) 期盼情緣的少女，用 (慎重) 而 (莊嚴) 的態度追求愛情。", filename: "symbolism_girl_tree" },
-                    { title: "5. 結局安排", content: "為什麼作者並未安排期盼成真的喜悅結局？因為「執著的落空」更具 (震撼力)，會令人更加 (動容)，且印象更深刻。", filename: "sad_ending_scene" }
+                    { title: "1. 音韻諧暢", content: "本詩音韻諧暢，詩中第一節的「前、年、緣」，第二節的「旁、望」，第三節的「近、心」、「聽、情」均有押韻的效果。", prompt: "Musical notes floating in air" },
+                    { title: "2. 第一人稱", content: "用「我」的口吻敘述少女的單戀，屬於第 (一) 人稱。", prompt: "A girl writing a diary" },
+                    { title: "3. 抒情詩", content: "是一首 (抒情) 詩，描述了女子對感情的 (期盼) 和 (失落)。", prompt: "Emotional expression in poetry" },
+                    { title: "4. 象徵手法", content: "以「一棵開花的樹」(象徵) 期盼情緣的少女，用 (慎重) 而 (莊嚴) 的態度追求愛情。", prompt: "A flowering tree symbolizing a girl" },
+                    { title: "5. 結局安排", content: "為什麼作者並未安排期盼成真的喜悅結局？因為「執著的落空」更具 (震撼力)，會令人更加 (動容)，且印象更深刻。", prompt: "Sad but beautiful ending scene" }
                 ]
             },
             structure: {
                 title: "課文結構表",
                 parts: [
-                    { section: "第一節", title: "佛前祈求", content: "少女期盼在她最美麗的時候，能與心儀的對象相遇。", filename: "structure_part1_prayer" },
-                    { section: "第二節", title: "今生期盼", content: "佛助少女化成一棵花樹，與心儀對象有相遇的機會。", filename: "structure_part2_waiting" },
-                    { section: "第三節", title: "期盼落空", content: "少女熱烈的期盼落空，留下無限的落寞與感傷。", filename: "structure_part3_disappointment" }
+                    { section: "第一節", title: "佛前祈求", content: "少女期盼在她最美麗的時候，能與心儀的對象相遇。", prompt: "Girl kneeling and praying sincerely" },
+                    { section: "第二節", title: "今生期盼", content: "佛助少女化成一棵花樹，與心儀對象有相遇的機會。", prompt: "Tree with green leaves trembling in anticipation" },
+                    { section: "第三節", title: "期盼落空", content: "少女熱烈的期盼落空，留下無限的落寞與感傷。", prompt: "Man walking past a tree without looking, petals falling" }
                 ]
             }
         };
@@ -277,7 +341,7 @@
             const q = [];
             let id = 1;
             
-            // --- 1. 注釋 (22題) ---
+            // --- 1. 注釋 (22題 - Full Coverage) ---
             q.push({ id: id++, category: "注釋", question: "「基調」的意思是？", options: ["主要的中心思想或觀念", "音樂的旋律", "說話的語氣", "建築的地基"], answer: "主要的中心思想或觀念" });
             q.push({ id: id++, category: "注釋", question: "「家境殷實」是指？", options: ["家境充足、富裕", "家裡人很多", "房子很堅固", "家境貧困"], answer: "家境充足、富裕" });
             q.push({ id: id++, category: "注釋", question: "「遒勁」通常形容什麼？", options: ["筆力或樹枝強勁有力", "風很大", "跑步很快", "說話很大聲"], answer: "筆力或樹枝強勁有力" });
@@ -293,6 +357,7 @@
             q.push({ id: id++, category: "注釋", question: "「剛愎自用」的意思是？", options: ["性情倔強，固執己見", "非常有自信", "剛強勇敢", "善於利用資源"], answer: "性情倔強，固執己見" });
             q.push({ id: id++, category: "注釋", question: "「細聽」的意思接近？", options: ["聆聽、諦聽", "隨便聽聽", "聽不清楚", "偷聽"], answer: "聆聽、諦聽" });
             q.push({ id: id++, category: "注釋", question: "「心儀」的意思是？", options: ["內心仰慕", "心裡懷疑", "心臟儀器", "心情愉快"], answer: "內心仰慕" });
+            // Added Missing Annotations
             q.push({ id: id++, category: "注釋", question: "「因緣」的意思是？", options: ["緣分、機緣", "因為所以", "婚姻關係", "朋友關係"], answer: "緣分、機緣" });
             q.push({ id: id++, category: "注釋", question: "「殷切」的意思是？", options: ["熱切、急切", "非常親切", "刀法俐落", "聲音清脆"], answer: "熱切、急切" });
             q.push({ id: id++, category: "注釋", question: "「盼望」的近義詞是？", options: ["渴望、企盼", "失望、絕望", "觀望、眺望", "回望、張望"], answer: "渴望、企盼" });
@@ -301,7 +366,7 @@
             q.push({ id: id++, category: "注釋", question: "「萬紫千紅」形容什麼景象？", options: ["群花盛開，多彩絢爛", "衣服顏色很多", "天上的彩虹", "燈光閃爍"], answer: "群花盛開，多彩絢爛" });
             q.push({ id: id++, category: "注釋", question: "「痴心妄想」的意思是？", options: ["痴迷地幻想著不能實現的事情", "很有想像力", "心地善良", "做事很專心"], answer: "痴迷地幻想著不能實現的事情" });
 
-            // --- 2. 形音義 (20題) ---
+            // --- 2. 形音義 (20題 - Enhanced Coverage) ---
             q.push({ id: id++, category: "形音義", question: "「一」石二鳥的「一」字義是？", options: ["單一個", "相同", "全、滿", "偶然"], answer: "單一個" });
             q.push({ id: id++, category: "形音義", question: "表裡如「一」的「一」字義是？", options: ["相同、一致", "單一個", "全、滿", "偶然"], answer: "相同、一致" });
             q.push({ id: id++, category: "形音義", question: "「一」不小心的「一」字義是？", options: ["偶然", "相同", "單一個", "全、滿"], answer: "偶然" });
@@ -319,6 +384,8 @@
             q.push({ id: id++, category: "形音義", question: "「顫」抖的讀音是？", options: ["ㄓㄢˋ", "ㄊㄢˊ", "ㄓㄢ", "ㄕㄢˋ"], answer: "ㄓㄢˋ" });
             q.push({ id: id++, category: "形音義", question: "下列哪一個讀音不是「ㄅㄧㄢˋ」？", options: ["花瓣", "辨別", "辯論", "辮子"], answer: "花瓣" });
             q.push({ id: id++, category: "形音義", question: "花「瓣」的讀音是？", options: ["ㄅㄢˋ", "ㄅㄧㄢˋ", "ㄆㄢˋ", "ㄅㄟˋ"], answer: "ㄅㄢˋ" });
+            
+            // Added Specific Confusing Words Checks
             q.push({ id: id++, category: "形音義", question: "觀者如「堵」的意思是？", options: ["牆壁，形容人多", "賭博", "看見", "心裡不通"], answer: "牆壁，形容人多" });
             q.push({ id: id++, category: "形音義", question: "「荳」蔻年華通常指幾歲的少女？", options: ["十三、四歲", "二十歲", "剛出生", "六十歲"], answer: "十三、四歲" });
             q.push({ id: id++, category: "形音義", question: "身心「舒」暢的舒意思為？", options: ["伸展、放鬆", "發表意見", "解除困難", "書寫"], answer: "伸展、放鬆" });
@@ -358,7 +425,7 @@
             q.push({ id: id++, category: "課文解析", question: "這首詩屬於什麼類型的詩？", options: ["抒情詩", "敘事詩", "諷刺詩", "田園詩"], answer: "抒情詩" });
             q.push({ id: id++, category: "課文解析", question: "為什麼作者不安排喜悅的結局？", options: ["遺憾與落空更具震撼力", "作者喜歡悲劇", "現實生活都很慘", "為了寫續集"], answer: "遺憾與落空更具震撼力" });
 
-            // --- 5. 背景與寫作手法 (25題) ---
+            // --- 5. 背景與寫作手法 (25題 - Expanded) ---
             q.push({ id: id++, category: "背景知識", question: "席慕蓉本名「穆倫．席連勃」意思是？", options: ["大江河", "美麗的花", "高山", "草原"], answer: "大江河" });
             q.push({ id: id++, category: "背景知識", question: "席慕蓉的第一本詩集是？", options: ["七里香", "無怨的青春", "時光九篇", "迷途詩冊"], answer: "七里香" });
             q.push({ id: id++, category: "背景知識", question: "《七里香》於民國幾年出版？", options: ["七十年", "六十年", "八十年", "五十年"], answer: "七十年" });
@@ -366,12 +433,13 @@
             q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「寫詩」對她的意義是？", options: ["給自己的獎品", "終身的工作", "放鬆的方法", "對生命的驚嘆"], answer: "給自己的獎品" });
             q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「畫畫」對她的意義是？", options: ["終身投入的工作", "給自己的獎品", "放鬆的方法", "對生命的驚嘆"], answer: "終身投入的工作" });
             q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「散文」對她的意義是？", options: ["對生命的一種驚嘆", "給自己的獎品", "終身投入的工作", "放鬆的方法"], answer: "對生命的一種驚嘆" });
-            q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「寫作」對她的意義是？", options: ["放鬆的一面，抽身的方法", "終身投入的工作", "給自己的獎品", "對生命的驚嘆"], answer: "放鬆的一面，抽身的方法" });
+            q.push({ id: id++, category: "背景知識", question: "席慕蓉自述「寫作」對她的意義是？", options: ["放鬆的一面，抽身的方法", "終身投入的工作", "給自己的獎品", "對生命的驚嘆"], answer: "放鬆的一面，抽身的方法" }); // Added
             q.push({ id: id++, category: "背景知識", question: "《一棵開花的樹》創作靈感來自？", options: ["一棵開滿花的油桐樹", "櫻花樹", "夢境", "一個老獵人的故事"], answer: "一棵開滿花的油桐樹" });
             q.push({ id: id++, category: "背景知識", question: "作者在哪裡看到這棵觸動靈感的樹？", options: ["新竹往苗栗的火車上", "阿里山", "陽明山", "家裡的後院"], answer: "新竹往苗栗的火車上" });
             q.push({ id: id++, category: "背景知識", question: "席慕蓉認為「愛」可以喚醒什麼？", options: ["內在的美", "沉睡的人", "前世記憶", "痛苦的回憶"], answer: "內在的美" });
             q.push({ id: id++, category: "背景知識", question: "席慕蓉說這首詩有時候也是開給誰看的？", options: ["自己", "讀者", "愛人", "佛"], answer: "自己" });
             q.push({ id: id++, category: "背景知識", question: "《七里香》這本詩集主要描述什麼情懷？", options: ["青春情懷", "愛國情操", "山水風景", "哲理思考"], answer: "青春情懷" });
+            // Added Techniques Questions
             q.push({ id: id++, category: "背景知識", question: "詩中第一節「前、年、緣」和第三節「近、心」運用了什麼寫作手法？", options: ["押韻 (音韻諧暢)", "映襯", "譬喻", "排比"], answer: "押韻 (音韻諧暢)" });
             q.push({ id: id++, category: "背景知識", question: "本詩以「一棵開花的樹」象徵？", options: ["期盼情緣的少女", "大自然的生命力", "佛的化身", "美麗的風景"], answer: "期盼情緣的少女" });
             q.push({ id: id++, category: "背景知識", question: "少女對感情的態度被形容為？", options: ["慎重而莊嚴", "隨便且輕浮", "激烈且瘋狂", "冷漠且無情"], answer: "慎重而莊嚴" });
@@ -380,7 +448,7 @@
             q.push({ id: id++, category: "背景知識", question: "詩中以「顫抖的葉」來表達什麼心情？", options: ["既期待又怕受傷害", "因為很冷", "因為害怕", "因為興奮"], answer: "既期待又怕受傷害" });
             q.push({ id: id++, category: "背景知識", question: "男子「無視」的走過，是全詩的關鍵轉折，這造成了什麼效果？", options: ["反差", "排比", "對偶", "層遞"], answer: "反差" });
 
-            // 隨機打亂選項
+            // 隨機打亂選項 (Fisher-Yates Shuffle)
             const shuffleArray = (array) => {
                 for (let i = array.length - 1; i > 0; i--) {
                     const j = Math.floor(Math.random() * (i + 1));
@@ -389,6 +457,7 @@
                 return array;
             };
 
+            // 對每一題的選項進行洗牌
             q.forEach(item => {
                 item.options = shuffleArray(item.options);
             });
@@ -581,9 +650,11 @@
             );
         };
 
-        // --- LearningModule with Local Images ---
+        // --- LearningModule ---
         const LearningModule = ({ onBack }) => {
             const [activeTab, setActiveTab] = useState('intro'); 
+            const [generatedImages, setGeneratedImages] = useState({});
+            const [loadingImages, setLoadingImages] = useState({});
             
             const tabs = [
                 { id: 'intro', label: '注釋與作者' },
@@ -593,27 +664,25 @@
                 { id: 'structure', label: '課文結構' },
             ];
 
-            // Render local image section
+            // Render static image if provided in item, otherwise skip image section
             const renderImageSection = (item) => {
-                // If item has a filename, assume local image at images/{filename}.jpg
-                if (!item.filename) return null;
-                const imagePath = `images/${item.filename}.jpg`;
-
-                return (
-                    <div className="mt-4 border-t border-dashed border-stone-200 pt-4">
-                        <div className="relative group">
-                            <img 
-                                src={imagePath} 
-                                alt={item.term || item.name || item.title} 
-                                className="w-full h-auto rounded-lg shadow-sm object-cover animate-fade-in"
-                                onError={(e) => {
-                                    // Hide image if failed to load (e.g. file missing)
-                                    e.target.style.display = 'none';
-                                }}
-                            />
+                if (item.image) {
+                    return (
+                        <div className="mt-4 border-t border-dashed border-stone-200 pt-4">
+                            <div className="relative group">
+                                <img 
+                                    src={item.image} 
+                                    alt={item.name || item.title || "Illustration"} 
+                                    className="w-full h-auto rounded-lg shadow-sm object-cover"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none'; // Hide if image load fails
+                                    }}
+                                />
+                            </div>
                         </div>
-                    </div>
-                );
+                    );
+                }
+                return null;
             };
 
             return (
@@ -655,7 +724,6 @@
                                             <div key={i} className="border border-stone-200 rounded-xl p-5 hover:shadow-md transition bg-white">
                                                 <h4 className="font-bold text-xl text-cyan-700 mb-2">{item.term}</h4>
                                                 <p className="text-stone-700 mb-3 text-lg leading-relaxed whitespace-pre-wrap">{item.definition}</p>
-                                                {renderImageSection(item)}
                                             </div>
                                         ))}
                                         {/* Special Block - Author Info */}
@@ -665,7 +733,6 @@
                                             <div className="text-stone-700 leading-relaxed whitespace-pre-wrap text-sm bg-white/50 p-4 rounded-lg">
                                                 {STUDY_CONTENT.intro.special_item.long_desc}
                                             </div>
-                                            {renderImageSection(STUDY_CONTENT.intro.special_item)}
                                         </div>
                                     </div>
                                 </div>
@@ -684,7 +751,6 @@
                                                         <span className="text-2xl font-bold text-purple-800 mr-3 border-r pr-3 border-purple-200">{item.char}</span>
                                                     </div>
                                                     <p className="text-stone-700 whitespace-pre-wrap leading-relaxed">{item.content}</p>
-                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -694,12 +760,9 @@
                                         <h4 className="text-lg font-bold text-rose-700 mb-3 bg-rose-50 p-2 rounded w-fit">形音辨正 (同音/形近)</h4>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                             {STUDY_CONTENT.shape_sound.confusing.map((item, i) => (
-                                                <div key={i} className="flex flex-col bg-white border border-stone-200 p-3 rounded-lg">
-                                                    <div className="flex justify-between items-center mb-2">
-                                                        <span className="font-medium text-stone-800">{item.text}</span>
-                                                        <span className="text-sm font-mono text-rose-600 bg-rose-50 px-2 py-1 rounded">{item.sounds}</span>
-                                                    </div>
-                                                    {renderImageSection(item)}
+                                                <div key={i} className="flex justify-between items-center bg-white border border-stone-200 p-3 rounded-lg">
+                                                    <span className="font-medium text-stone-800">{item.text}</span>
+                                                    <span className="text-sm font-mono text-rose-600 bg-rose-50 px-2 py-1 rounded">{item.sounds}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -790,7 +853,6 @@
                                                 <div key={i} className="bg-white p-4 rounded-lg border-l-4 border-teal-400 shadow-sm">
                                                     <h5 className="text-stone-800 font-bold mb-1">{tech.title}</h5>
                                                     <p className="text-stone-600 text-sm leading-relaxed">{tech.content}</p>
-                                                    {renderImageSection(tech)}
                                                 </div>
                                             ))}
                                         </div>
@@ -1220,7 +1282,7 @@
 
                                         <h3 className="text-lg font-bold text-stone-800 mb-4">{q.question}</h3>
 
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div className="grid grid-cols-1 gap-3">
                                             {q.options.map((opt, i) => {
                                                 let btnClass = "border-stone-200 text-stone-600 hover:bg-stone-50";
                                                 let icon = null;
