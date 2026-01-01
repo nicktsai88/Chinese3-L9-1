@@ -80,7 +80,7 @@
             ChevronRight, LogOut, User, ArrowLeft, Zap, Volume2, Home, LayoutGrid, 
             Layers, ChevronDown, ChevronUp, Loader2, Sparkles, Image as ImageIcon, Download, ImageOff,
             Gavel, Scale, FileText, List, Leaf, Droplets, Tent, Mountain, PlayCircle, FastForward, RotateCcw,
-            Flower, BookMarked, Camera, Save, Trash2, AlertTriangle
+            Flower, BookMarked, Camera, Save
         } from 'lucide-react';
 
         // --- LocalStorage Database Helper ---
@@ -581,7 +581,7 @@
             );
         };
 
-        // --- LearningModule (NO IMAGES) ---
+        // --- LearningModule with Local Images ---
         const LearningModule = ({ onBack }) => {
             const [activeTab, setActiveTab] = useState('intro'); 
             
@@ -592,6 +592,29 @@
                 { id: 'knowledge', label: '背景與手法' },
                 { id: 'structure', label: '課文結構' },
             ];
+
+            // Render local image section
+            const renderImageSection = (item) => {
+                // If item has a filename, assume local image at images/{filename}.jpg
+                if (!item.filename) return null;
+                const imagePath = `images/${item.filename}.jpg`;
+
+                return (
+                    <div className="mt-4 border-t border-dashed border-stone-200 pt-4">
+                        <div className="relative group">
+                            <img 
+                                src={imagePath} 
+                                alt={item.term || item.name || item.title} 
+                                className="w-full h-auto rounded-lg shadow-sm object-cover animate-fade-in"
+                                onError={(e) => {
+                                    // Hide image if failed to load (e.g. file missing)
+                                    e.target.style.display = 'none';
+                                }}
+                            />
+                        </div>
+                    </div>
+                );
+            };
 
             return (
                 <div className="h-full flex flex-col">
@@ -632,6 +655,7 @@
                                             <div key={i} className="border border-stone-200 rounded-xl p-5 hover:shadow-md transition bg-white">
                                                 <h4 className="font-bold text-xl text-cyan-700 mb-2">{item.term}</h4>
                                                 <p className="text-stone-700 mb-3 text-lg leading-relaxed whitespace-pre-wrap">{item.definition}</p>
+                                                {renderImageSection(item)}
                                             </div>
                                         ))}
                                         {/* Special Block - Author Info */}
@@ -641,6 +665,7 @@
                                             <div className="text-stone-700 leading-relaxed whitespace-pre-wrap text-sm bg-white/50 p-4 rounded-lg">
                                                 {STUDY_CONTENT.intro.special_item.long_desc}
                                             </div>
+                                            {renderImageSection(STUDY_CONTENT.intro.special_item)}
                                         </div>
                                     </div>
                                 </div>
@@ -659,6 +684,7 @@
                                                         <span className="text-2xl font-bold text-purple-800 mr-3 border-r pr-3 border-purple-200">{item.char}</span>
                                                     </div>
                                                     <p className="text-stone-700 whitespace-pre-wrap leading-relaxed">{item.content}</p>
+                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -673,6 +699,7 @@
                                                         <span className="font-medium text-stone-800">{item.text}</span>
                                                         <span className="text-sm font-mono text-rose-600 bg-rose-50 px-2 py-1 rounded">{item.sounds}</span>
                                                     </div>
+                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -692,6 +719,7 @@
                                                     <h5 className="font-bold text-lg text-amber-900 mb-2">{item.name}</h5>
                                                     <p className="text-stone-700 mb-2">{item.mean}</p>
                                                     {item.note && <p className="text-sm text-stone-500 italic bg-stone-50 p-2 rounded">{item.note}</p>}
+                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -704,6 +732,7 @@
                                                 <div key={i} className="bg-white border border-blue-100 p-5 rounded-xl shadow-sm">
                                                     <h5 className="font-bold text-lg text-blue-900 mb-2">{item.name}</h5>
                                                     <p className="text-stone-700">{item.mean}</p>
+                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -716,6 +745,7 @@
                                                 <div key={i} className="bg-white border-l-4 border-red-400 p-5 rounded shadow-sm">
                                                     <h5 className="font-bold text-lg text-red-900 mb-1">{item.name}</h5>
                                                     <p className="text-stone-700 mb-2 whitespace-pre-wrap leading-relaxed">{item.mean}</p>
+                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -734,6 +764,7 @@
                                                 <div key={i} className="bg-green-50/50 p-5 rounded-xl border border-green-100">
                                                     <h5 className="font-bold text-green-900 text-lg mb-1">{item.title} <span className="text-sm font-normal text-stone-500">({item.source})</span></h5>
                                                     <p className="text-stone-700 leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -746,6 +777,7 @@
                                                 <div key={i} className="bg-white border border-stone-200 p-5 rounded-xl shadow-sm">
                                                     <h5 className="font-bold text-stone-900 mb-2">{item.title}</h5>
                                                     <p className="text-stone-600 text-sm leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                                                    {renderImageSection(item)}
                                                 </div>
                                             ))}
                                         </div>
@@ -758,6 +790,7 @@
                                                 <div key={i} className="bg-white p-4 rounded-lg border-l-4 border-teal-400 shadow-sm">
                                                     <h5 className="text-stone-800 font-bold mb-1">{tech.title}</h5>
                                                     <p className="text-stone-600 text-sm leading-relaxed">{tech.content}</p>
+                                                    {renderImageSection(tech)}
                                                 </div>
                                             ))}
                                         </div>
@@ -775,6 +808,9 @@
                                                     <span className="inline-block px-3 py-1 bg-stone-800 text-white text-xs rounded-full mb-3">{part.section}</span>
                                                     <h4 className="text-xl font-bold text-stone-900 mb-2">{part.title}</h4>
                                                     <p className="text-stone-600 leading-relaxed text-lg">{part.content}</p>
+                                                </div>
+                                                <div className="w-full md:w-1/3">
+                                                    {renderImageSection(part)}
                                                 </div>
                                             </div>
                                         ))}
@@ -1013,15 +1049,14 @@
             const [showConfetti, setShowConfetti] = useState(false);
             const [isSubmitting, setIsSubmitting] = useState(false);
             const [showResumeDialog, setShowResumeDialog] = useState(false);
-            const [confirmRestart, setConfirmRestart] = useState(false); // Double confirmation state
             const scrollRef = useRef(null);
-            const questionRefs = useRef({});
 
             useEffect(() => {
                 const initQuiz = () => {
                     const saved = LocalDB.getProgress(STORAGE_KEYS.QUIZ_PROGRESS_QUICK);
                     if (saved && saved.questions && saved.questions.length > 0) {
                         setShowResumeDialog(true);
+                        // Store temp data to state just in case, but rely on dialog choice
                         return;
                     } 
                     startNewQuiz();
@@ -1052,8 +1087,6 @@
                 setAnswers({});
                 setScore(0);
                 LocalDB.clearProgress(STORAGE_KEYS.QUIZ_PROGRESS_QUICK);
-                setConfirmRestart(false);
-                setShowResumeDialog(false);
             };
 
             const resumeQuiz = () => {
@@ -1062,20 +1095,6 @@
                     setQuestions(saved.questions);
                     setAnswers(saved.answers);
                     setScore(saved.score);
-                    
-                    // Logic to scroll to the last answered question or first unanswered
-                    setTimeout(() => {
-                        const firstUnansweredIndex = saved.questions.findIndex(q => !saved.answers[q.id]);
-                        if (firstUnansweredIndex !== -1) {
-                             const targetId = saved.questions[firstUnansweredIndex].id;
-                             if (questionRefs.current[targetId]) {
-                                 questionRefs.current[targetId].scrollIntoView({ behavior: 'smooth', block: 'center' });
-                             }
-                        } else if (saved.questions.length > 0) {
-                             // If all answered, maybe go to bottom or top. Let's go to top.
-                             if (scrollRef.current) scrollRef.current.scrollTop = 0;
-                        }
-                    }, 100);
                 }
                 setShowResumeDialog(false);
             };
@@ -1147,37 +1166,16 @@
                             <div className="bg-amber-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <History className="w-8 h-8 text-amber-600" />
                             </div>
-                            
-                            {!confirmRestart ? (
-                                <>
-                                    <h3 className="text-xl font-bold text-stone-800 mb-2">發現未完成的測驗</h3>
-                                    <p className="text-stone-500 mb-6">您上次還有未完成的快速測驗進度，是否要繼續？</p>
-                                    <div className="flex gap-3">
-                                        <button onClick={() => setConfirmRestart(true)} className="flex-1 py-3 border-2 border-stone-200 text-stone-600 rounded-xl font-bold hover:bg-stone-50 transition">
-                                            重新開始
-                                        </button>
-                                        <button onClick={resumeQuiz} className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition shadow-lg shadow-amber-200">
-                                            繼續測驗
-                                        </button>
-                                    </div>
-                                </>
-                            ) : (
-                                <>
-                                    <div className="flex items-center justify-center text-red-500 mb-2">
-                                        <AlertTriangle className="w-6 h-6 mr-1" />
-                                        <h3 className="text-xl font-bold">確定要重新開始嗎？</h3>
-                                    </div>
-                                    <p className="text-stone-500 mb-6">您的作答進度將會遺失且無法復原。</p>
-                                    <div className="flex gap-3">
-                                        <button onClick={() => setConfirmRestart(false)} className="flex-1 py-3 border-2 border-stone-200 text-stone-600 rounded-xl font-bold hover:bg-stone-50 transition">
-                                            取消
-                                        </button>
-                                        <button onClick={startNewQuiz} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600 transition shadow-lg shadow-red-200 flex items-center justify-center">
-                                            <Trash2 className="w-4 h-4 mr-2" /> 確定重來
-                                        </button>
-                                    </div>
-                                </>
-                            )}
+                            <h3 className="text-xl font-bold text-stone-800 mb-2">發現未完成的測驗</h3>
+                            <p className="text-stone-500 mb-6">您上次還有未完成的快速測驗進度，是否要繼續？</p>
+                            <div className="flex gap-3">
+                                <button onClick={() => { setShowResumeDialog(false); startNewQuiz(); }} className="flex-1 py-3 border-2 border-stone-200 text-stone-600 rounded-xl font-bold hover:bg-stone-50 transition">
+                                    重新開始
+                                </button>
+                                <button onClick={resumeQuiz} className="flex-1 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition shadow-lg shadow-amber-200">
+                                    繼續測驗
+                                </button>
+                            </div>
                         </div>
                     </div>
                 );
@@ -1209,12 +1207,7 @@
                                 const isCorrect = userAnswer === q.answer;
                                 
                                 return (
-                                    <div 
-                                        key={q.id} 
-                                        ref={el => questionRefs.current[q.id] = el}
-                                        id={`question-${q.id}`}
-                                        className={`bg-white rounded-xl shadow-sm border-l-4 p-5 transition-all ${isAnswered ? (isCorrect ? 'border-emerald-500 bg-emerald-50/30' : 'border-red-500 bg-red-50/30') : 'border-stone-200 hover:border-amber-300'}`}
-                                    >
+                                    <div key={q.id} className={`bg-white rounded-xl shadow-sm border-l-4 p-5 transition-all ${isAnswered ? (isCorrect ? 'border-emerald-500 bg-emerald-50/30' : 'border-red-500 bg-red-50/30') : 'border-stone-200 hover:border-amber-300'}`}>
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex items-center">
                                                 <span className="bg-stone-100 text-stone-500 text-xs font-bold px-2 py-1 rounded mr-2">#{index + 1}</span>
